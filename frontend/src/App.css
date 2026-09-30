@@ -1,0 +1,214 @@
+/* src/App.css */
+body, html, #root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: system-ui, -apple-system, sans-serif;
+  background-color: #141414;
+  color: #ffffff;
+  overflow: hidden;
+}
+
+.app-container {
+  display: flex;
+  width: 100vw;
+  height: 100vh;
+}
+
+/* Общие стили для боковых панелей */
+.sidebar {
+  width: 320px;
+  min-width: 320px;
+  background-color: #1f1f1f;
+  padding: 24px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid #303030;
+  z-index: 10;
+  box-shadow: 0 0 20px rgba(0,0,0,0.5);
+}
+
+/* Правая панель информации */
+.info-panel {
+  border-right: none;
+  border-left: 1px solid #303030;
+}
+
+/* Главный экран с графом */
+.graph-viewport {
+  flex-grow: 1;
+  background-color: #141414;
+  position: relative;
+}
+
+/* Заголовки панелей */
+.sidebar h2 {
+  font-size: 20px;
+  margin-top: 0;
+  margin-bottom: 24px;
+  color: #ffffff;
+  border-bottom: 1px solid #303030;
+  padding-bottom: 12px;
+}
+
+/* Формы */
+.form-group {
+  margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+}
+
+.form-group.checkbox {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  color: #e8e8e8;
+}
+
+.form-group label {
+  margin-bottom: 8px;
+  font-size: 14px;
+  color: #aaaaaa;
+}
+
+.form-group input[type="text"],
+.form-group input[type="number"] {
+  padding: 10px;
+  background: #2d2d2d;
+  border: 1px solid #434343;
+  color: #ffffff;
+  border-radius: 6px;
+  font-size: 14px;
+  transition: border-color 0.2s;
+}
+
+.form-group input[type="text"]:focus,
+.form-group input[type="number"]:focus {
+  outline: none;
+  border-color: #1890ff;
+}
+
+/* Кнопка отправки */
+.btn-submit {
+  width: 100%;
+  padding: 12px;
+  background-color: #1890ff;
+  border: none;
+  color: white;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 14px;
+  transition: background-color 0.2s;
+  margin-top: 10px;
+}
+
+.btn-submit:hover {
+  background-color: #40a9ff;
+}
+
+/* Карточка информации справа */
+.node-details {
+  background: #2d2d2d;
+  padding: 20px;
+  border-radius: 8px;
+  border: 1px solid #434343;
+}
+
+.node-details h3 {
+  margin-top: 0;
+  color: #1890ff;
+  font-size: 18px;
+}
+
+.node-details p {
+  font-size: 14px;
+  color: #e8e8e8;
+  margin: 8px 0;
+}
+
+.placeholder-text {
+  color: #666666;
+  font-style: italic;
+  text-align: center;
+  margin-top: 40px;
+  font-size: 14px;
+}
+
+/* Сноска в самом низу левой панели */
+.analytics-notice {
+  margin-top: auto;
+  color: #faad14; /* Сделаем её предупреждающе-жёлтой/золотой */
+  font-size: 12px;
+  background: rgba(250, 173, 20, 0.1);
+  padding: 10px;
+  border-radius: 4px;
+  border: 1px solid rgba(250, 173, 20, 0.2);
+}
+
+
+.analysis-actions-block {
+  margin-top: 25px;
+  padding-top: 20px;
+  border-top: 2px dashed #303030;
+}
+
+.analysis-actions-block h3 {
+  font-size: 15px;
+  margin-top: 0;
+  margin-bottom: 15px;
+  color: #faad14;
+}
+
+.badge-alert {
+  background: #ff4d4f;
+  color: white;
+  padding: 2px 6px;
+  font-size: 10px;
+  font-weight: bold;
+  border-radius: 4px;
+  margin-right: 4px;
+}
+
+.radio-group {
+  display: flex;
+  gap: 8px;
+  margin-top: 5px;
+}
+
+.btn-toggle {
+  flex: 1;
+  padding: 6px;
+  font-size: 12px;
+  background: #2d2d2d;
+  border: 1px solid #434343;
+  color: #aaa;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.btn-toggle.active {
+  background: #1890ff;
+  color: white;
+  border-color: #1890ff;
+}
+
+.btn-analytics {
+  width: 100%;
+  padding: 10px;
+  background: transparent;
+  border: 1px solid #faad14;
+  color: #faad14;
+  border-radius: 6px;
+  font-weight: bold;
+  cursor: pointer;
+  margin-top: 15px;
+  transition: all 0.2s;
+}
+
+.btn-analytics:hover, .btn-analytics.active {
+  background: #faad14;
+  color: #000;
+}

@@ -1,214 +1,414 @@
-/* src/App.css */
-body, html, #root {
-  margin: 0;
-  padding: 0;
-  height: 100%;
-  font-family: system-ui, -apple-system, sans-serif;
-  background-color: #141414;
-  color: #ffffff;
-  overflow: hidden;
-}
-
+/* ===================== Layout ===================== */
 .app-container {
   display: flex;
-  width: 100vw;
+  flex-direction: row;
+  width: 100%;
   height: 100vh;
-}
-
-/* Общие стили для боковых панелей */
-.sidebar {
-  width: 320px;
-  min-width: 320px;
-  background-color: #1f1f1f;
-  padding: 24px;
+  height: 100svh;
+  overflow: hidden;
   box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-  border-right: 1px solid #303030;
-  z-index: 10;
-  box-shadow: 0 0 20px rgba(0,0,0,0.5);
+  text-align: left;
 }
 
-/* Правая панель информации */
-.info-panel {
-  border-right: none;
-  border-left: 1px solid #303030;
-}
-
-/* Главный экран с графом */
-.graph-viewport {
-  flex-grow: 1;
-  background-color: #141414;
+/* ===================== Сайдбары-шторки ===================== */
+.sidebar {
   position: relative;
+  flex: 0 0 auto;
+  height: 100%;
+  background: var(--bg);
+  box-sizing: border-box;
+  transition: width 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: visible; /* ручка торчит наружу */
+  display: flex;
+  flex-direction: row;
+}
+
+.search-panel {
+  border-right: 1px solid var(--border);
+}
+
+.info-panel {
+  border-left: 1px solid var(--border);
+  flex-direction: row-reverse;
+}
+
+/* Ширина открытого/закрытого состояния */
+.sidebar.open   { width: 340px; }
+.sidebar.closed { width: 0; } /* видно только язычок */
+
+/* Маленькая выпуклость-язычок */
+.sidebar-handle {
+  position: absolute;
+  top: 90px;
+  width: 36px;
+  height: 56px;
+  border: 1px solid var(--border);
+  background: var(--code-bg);
+  color: var(--text-h);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  z-index: 10;
+  border-radius: 0 10px 10px 0;
+  box-shadow: var(--shadow);
+  transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease;
+}
+
+/* Левый язычок: торчит из правого края левой шторки */
+.search-panel .sidebar-handle {
+  right: -36px;
+  border-left: none;
+}
+
+/* Правый язычок: торчит из левого края правой шторки */
+.info-panel .sidebar-handle {
+  left: -36px;
+  border-right: none;
+  border-radius: 10px 0 0 10px;
+}
+
+.sidebar-handle:hover {
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.sidebar-handle:active {
+  transform: scale(0.95);
+}
+
+.sidebar-handle .handle-icon {
+  display: block;
+  pointer-events: none;
+}
+
+/* Внутреннее содержимое шторки */
+.sidebar-content {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  padding: 20px 16px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  box-sizing: border-box;
+  text-align: left;
+  transition: opacity 0.2s ease;
+}
+
+.sidebar.closed .sidebar-content {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.sidebar.open .sidebar-content {
+  opacity: 1;
+  visibility: visible;
 }
 
 /* Заголовки панелей */
 .sidebar h2 {
   font-size: 20px;
-  margin-top: 0;
-  margin-bottom: 24px;
-  color: #ffffff;
-  border-bottom: 1px solid #303030;
-  padding-bottom: 12px;
+  margin-bottom: 16px;
+  text-align: center;
 }
 
-/* Формы */
+.sidebar h3 {
+  font-family: var(--heading);
+  font-weight: 500;
+  color: var(--text-h);
+  font-size: 15px;
+  margin: 0 0 12px;
+  text-align: left;
+}
+
+/* ===================== Формы ===================== */
 .form-group {
-  margin-bottom: 20px;
+  margin-bottom: 14px;
   display: flex;
   flex-direction: column;
+  gap: 6px;
+}
+
+.form-group label {
+  font-size: 14px;
+  color: var(--text);
+  text-align: left;
+}
+
+.form-group input[type="text"],
+.form-group input[type="number"] {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--code-bg);
+  color: var(--text-h);
+  font: inherit;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.form-group input[type="text"]:focus,
+.form-group input[type="number"]:focus {
+  border-color: var(--accent-border);
+  box-shadow: 0 0 0 3px var(--accent-bg);
+}
+
+.form-group input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .form-group.checkbox {
   flex-direction: row;
   align-items: center;
   gap: 8px;
+}
+
+.form-group.checkbox label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   cursor: pointer;
-  color: #e8e8e8;
-}
-
-.form-group label {
-  margin-bottom: 8px;
   font-size: 14px;
-  color: #aaaaaa;
 }
 
-.form-group input[type="text"],
-.form-group input[type="number"] {
-  padding: 10px;
-  background: #2d2d2d;
-  border: 1px solid #434343;
-  color: #ffffff;
-  border-radius: 6px;
-  font-size: 14px;
-  transition: border-color 0.2s;
+.form-group input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
 }
 
-.form-group input[type="text"]:focus,
-.form-group input[type="number"]:focus {
-  outline: none;
-  border-color: #1890ff;
-}
-
-/* Кнопка отправки */
+/* ===================== Кнопки ===================== */
 .btn-submit {
   width: 100%;
-  padding: 12px;
-  background-color: #1890ff;
-  border: none;
-  color: white;
+  padding: 10px 14px;
+  margin-top: 4px;
+  border: 1px solid var(--accent-border);
   border-radius: 6px;
+  background: var(--accent-bg);
+  color: var(--text-h);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
   cursor: pointer;
-  font-weight: 600;
-  font-size: 14px;
-  transition: background-color 0.2s;
-  margin-top: 10px;
+  transition: background 0.15s ease, transform 0.05s ease;
 }
 
-.btn-submit:hover {
-  background-color: #40a9ff;
+.btn-submit:hover:not(:disabled) {
+  background: var(--accent);
+  color: #fff;
 }
 
-/* Карточка информации справа */
-.node-details {
-  background: #2d2d2d;
-  padding: 20px;
-  border-radius: 8px;
-  border: 1px solid #434343;
+.btn-submit:active:not(:disabled) {
+  transform: translateY(1px);
 }
 
-.node-details h3 {
-  margin-top: 0;
-  color: #1890ff;
-  font-size: 18px;
+.btn-submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
-.node-details p {
-  font-size: 14px;
-  color: #e8e8e8;
-  margin: 8px 0;
+.btn-toggle {
+  flex: 1 1 auto;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--code-bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s ease;
 }
 
-.placeholder-text {
-  color: #666666;
-  font-style: italic;
-  text-align: center;
-  margin-top: 40px;
-  font-size: 14px;
+.btn-toggle:hover {
+  border-color: var(--accent-border);
 }
 
-/* Сноска в самом низу левой панели */
-.analytics-notice {
-  margin-top: auto;
-  color: #faad14; /* Сделаем её предупреждающе-жёлтой/золотой */
-  font-size: 12px;
-  background: rgba(250, 173, 20, 0.1);
-  padding: 10px;
-  border-radius: 4px;
-  border: 1px solid rgba(250, 173, 20, 0.2);
-}
-
-
-.analysis-actions-block {
-  margin-top: 25px;
-  padding-top: 20px;
-  border-top: 2px dashed #303030;
-}
-
-.analysis-actions-block h3 {
-  font-size: 15px;
-  margin-top: 0;
-  margin-bottom: 15px;
-  color: #faad14;
-}
-
-.badge-alert {
-  background: #ff4d4f;
-  color: white;
-  padding: 2px 6px;
-  font-size: 10px;
-  font-weight: bold;
-  border-radius: 4px;
-  margin-right: 4px;
+.btn-toggle.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
 }
 
 .radio-group {
   display: flex;
-  gap: 8px;
-  margin-top: 5px;
-}
-
-.btn-toggle {
-  flex: 1;
-  padding: 6px;
-  font-size: 12px;
-  background: #2d2d2d;
-  border: 1px solid #434343;
-  color: #aaa;
-  cursor: pointer;
-  border-radius: 4px;
-}
-
-.btn-toggle.active {
-  background: #1890ff;
-  color: white;
-  border-color: #1890ff;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .btn-analytics {
   width: 100%;
-  padding: 10px;
-  background: transparent;
-  border: 1px solid #faad14;
-  color: #faad14;
+  padding: 10px 12px;
+  margin-top: 4px;
+  border: 1px dashed var(--accent-border);
   border-radius: 6px;
-  font-weight: bold;
+  background: transparent;
+  color: var(--text-h);
+  font: inherit;
+  font-size: 14px;
   cursor: pointer;
-  margin-top: 15px;
-  transition: all 0.2s;
+  transition: all 0.15s ease;
 }
 
-.btn-analytics:hover, .btn-analytics.active {
-  background: #faad14;
-  color: #000;
+.btn-analytics:hover {
+  background: var(--accent-bg);
+}
+
+.btn-analytics.active {
+  background: var(--accent);
+  color: #fff;
+  border-style: solid;
+  border-color: var(--accent);
+}
+
+/* ===================== Блоки панели ===================== */
+.analysis-actions-block {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+
+.badge-alert {
+  display: inline-block;
+  background: #ff4d4f;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+
+.toggle-label {
+  display: flex !important;
+  align-items: center;
+  gap: 6px;
+}
+
+.analytics-notice {
+  margin-top: 20px;
+  padding: 10px;
+  background: var(--code-bg);
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  color: var(--text);
+  opacity: 0.85;
+  text-align: left;
+  line-height: 1.4;
+}
+
+.analytics-notice small {
+  font-size: 12px;
+}
+
+/* ===================== Правая панель ===================== */
+.node-details {
+  text-align: left;
+}
+
+.node-details h3 {
+  font-size: 17px;
+  color: var(--text-h);
+  margin: 0 0 12px;
+  word-break: break-word;
+}
+
+.node-details p {
+  font-size: 14px;
+  margin-bottom: 8px;
+  line-height: 1.45;
+}
+
+.node-details hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 14px 0;
+}
+
+.placeholder-text {
+  color: var(--text);
+  opacity: 0.7;
+  font-size: 14px;
+  line-height: 1.5;
+  text-align: left;
+}
+
+/* ===================== Граф ===================== */
+.graph-viewport {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+  background: #0b0c10;
+  border-inline: 1px solid var(--border);
+}
+
+.graph-viewport canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* ===================== Адаптив ===================== */
+@media (max-width: 1024px) {
+  .sidebar.open {
+    width: 280px;
+  }
+}
+
+@media (max-width: 768px) {
+  .app-container {
+    flex-direction: column;
+  }
+
+  .sidebar {
+    width: 100% !important;
+    height: 0;
+    overflow: visible;
+    flex-direction: column !important;
+    border-inline: none;
+    border-block: 1px solid var(--border);
+  }
+
+  .sidebar.open {
+    height: auto;
+    max-height: 45vh;
+  }
+
+  /* На мобильном язычок торчит СНИЗУ шторки */
+  .sidebar-handle {
+    top: auto;
+    bottom: -36px;
+    left: 50% !important;
+    right: auto !important;
+    transform: translateX(-50%);
+    width: 56px;
+    height: 36px;
+    border-radius: 0 0 10px 10px !important;
+    border-top: none !important;
+    border-left: 1px solid var(--border) !important;
+    border-right: 1px solid var(--border) !important;
+  }
+
+  .sidebar-handle:active {
+    transform: translateX(-50%) scale(0.95);
+  }
+
+  .graph-viewport {
+    flex: 1 1 auto;
+    min-height: 50vh;
+    border-inline: none;
+  }
+
+  .sidebar h2 {
+    font-size: 17px;
+    margin-bottom: 10px;
+  }
 }

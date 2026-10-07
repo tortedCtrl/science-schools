@@ -1,7 +1,9 @@
 cmake_minimum_required(VERSION 3.22)
 
-# ВАЖНО: Тулчейн vcpkg объявляется ДО вызова команды project()
-set(CMAKE_TOOLCHAIN_FILE "/home/belozubova/vcpkg/scripts/buildsystems/vcpkg.cmake" CACHE STRING "")
+# Считываем VCPKG_ROOT из окружения, переданного через .env файл
+if(DEFINED ENV{VCPKG_ROOT})
+    set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" CACHE STRING "")
+endif()
 
 project(BackendProject VERSION 0.1.0 LANGUAGES CXX)
 

@@ -16,3 +16,4 @@ cmake-build-release/
 # Логи и временные файлы операционной системы
 *.log
 .DS_Store
+*.env

@@ -1,15 +1,18 @@
-.PHONY: all build clean run
+ifneq ($(wildcard .env),)
+    include .env
+    export $(shell sed 's/=.*//' .env)
+endif
 
-BUILD_DIR = build
+.PHONY: init build run clean
 
-all: build
+init:
+	cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE=$(VCPKG_ROOT)/scripts/buildsystems/vcpkg.cmake
 
 build:
-	cmake -B $(BUILD_DIR) -S . -G Ninja -DCMAKE_BUILD_TYPE=Debug
-	cmake --build $(BUILD_DIR)
+	cmake --build build
 
 run: build
-	./$(BUILD_DIR)/apps/server/backend_server
+	./build/apps/server/backend_server
 
 clean:
-	rm -rf $(BUILD_DIR)
+	rm -rf build/

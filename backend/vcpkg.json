@@ -2,6 +2,14 @@
   "name": "backend-core",
   "version-string": "0.1.0",
   "dependencies": [
-    "fmt"
+    "fmt", 
+    "curl", 
+    "nlohmann-json",
+    {
+      "name": "soci",
+      "features": [
+        "postgresql"
+      ]
+    }
   ]
 }

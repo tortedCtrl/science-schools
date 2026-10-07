@@ -1,0 +1,18 @@
+# Временная папка сборки CMake и Ninja
+/build/
+
+# Локальные файлы кэша и манифестов vcpkg (у каждого разработчика они свои)
+/.vcpkg-root
+/vcpkg_installed/
+
+# Настройки среды разработки VS Code
+.vscode/
+
+# Настройки среды разработки CLion / JetBrains
+.idea/
+cmake-build-debug/
+cmake-build-release/
+
+# Логи и временные файлы операционной системы
+*.log
+.DS_Store

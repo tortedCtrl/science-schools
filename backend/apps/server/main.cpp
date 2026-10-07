@@ -8,9 +8,9 @@ int main() {
     // сейчас код не скомпилируется нет подключения к базам данных
     std::string connection_string = "postgresql://postgres:secret@localhost:5432/science_schools";
     double gamma = 0.05;
-
+    
     DBClient db(connection_string);
-    std::vector<CoauthorshipEdge> edges = db.get_coauthorship_graph();
+    std::vector<CoauthorshipEdge> edges = db.get_coauthorship_edges();
 
     if (edges.empty()) {
         std::cerr << "Error: Coauthorship graph is empty." << std::endl;

@@ -2,32 +2,56 @@
 #include "api/openalex_client.hpp"
 #include "graph_engine/leiden_wrapper.hpp"
 #include <iostream>
+#include <cstdlib>
+#include <stdexcept>
 #include "nlohmann/json.hpp"
+
+namespace {
+std::string requiredConninfoValue(const char* name) { // не должна быть обычной строкой т.к. данные
+    const char* value = std::getenv(name);
+    if (value == nullptr || value[0] == '\0') {
+        throw std::runtime_error(std::string("Required environment variable is not set: ") + name);
+    }
+
+    std::string escaped = "'";
+    for (const char* ch = value; *ch != '\0'; ++ch) {
+        if (*ch == '\\' || *ch == '\'') {
+            escaped += '\\';
+        }
+        escaped += *ch;
+    }
+    escaped += '\'';
+    return escaped;
+}
+}
+
 int main() {
     try {
         std::cout << "1. Creating DBClient..." << std::endl;
-        std::string connection_string =
-            "host=127.0.0.1 "
-            "port=5433 "
-            "dbname=science_db "
-            "user=science_user "
-            "password=science_password";
-        DBClient db(connection_string);
+
+        std::string connection_string = // вынести логику
+            "host=" + requiredConninfoValue("POSTGRES_HOST") +
+            " port=" + requiredConninfoValue("POSTGRES_PUBLISHED_PORT") +
+            " dbname=" + requiredConninfoValue("POSTGRES_DB") +
+            " user=" + requiredConninfoValue("POSTGRES_USER") +
+            " password=" + requiredConninfoValue("POSTGRES_PASSWORD");
+
+        DBClient db(connection_string); // обработать исключение, чтобы connection_string не утекла в логи
 
         std::cout << "2. DB connected" << std::endl;
 
         OpenAlexClient openalex;
 
         std::cout << "3. Starting OpenAlex import" << std::endl;
-        openalex.loadDataBase(db, 1000);
+        openalex.loadDataBase(db, 10);
 
         std::cout << "4. OpenAlex import finished" << std::endl;
 
         auto edges = db.get_coauthorship_edges();
 
         std::cout << "5. Edges: "
-                  << edges.size()
-                  << std::endl;
+            << edges.size()
+            << std::endl;
 
         if (edges.empty()) {
             std::cout << "Graph is empty" << std::endl;
@@ -42,8 +66,8 @@ int main() {
             LeidenWrapper::run_leiden(edges, gamma);
 
         std::cout << "7. Communities calculated: "
-                  << communities.size()
-                  << std::endl;
+            << communities.size()
+            << std::endl;
 
         db.update_communities(communities);
 

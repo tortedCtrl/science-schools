@@ -4,13 +4,14 @@ services:
     container_name: science-postgres-data
 
     environment:
-      POSTGRES_USER: "${POSTGRES_USER:?Set POSTGRES_USER in .env}"
-      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}"
-      POSTGRES_DB: "${POSTGRES_DB:?Set POSTGRES_DB in .env}"
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:${POSTGRES_PUBLISHED_PORT:-5432}:${POSTGRES_PORT:-5432}"
     volumes:
       - science-postgres-data:/var/lib/postgresql/data
-      - ./backend/sql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - ./backend/sql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro,z
 volumes:
   science-postgres-data:

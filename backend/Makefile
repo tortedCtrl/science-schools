@@ -1,6 +1,6 @@
-ifneq ($(wildcard .env),)
-    include .env
-    export $(shell sed 's/=.*//' .env)
+ifneq ($(wildcard ../.env),)
+    include ../.env
+    export $(shell sed 's/=.*//' ../.env)
 endif
 
 .PHONY: init build run clean
@@ -12,7 +12,7 @@ build:
 	cmake --build build
 
 run: build
-	./build/apps/server/backend_server
+	set -a; . ../.env; set +a; ./build/apps/server/backend_server
 
 clean:
 	rm -rf build/

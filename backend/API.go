@@ -5,7 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
+	"os"
+
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -32,12 +36,53 @@ type Institution struct {
 	CountryCode string `json:"country_code"`
 }
 
+func requiredEnv(name string) (string, error) {
+	value, ok := os.LookupEnv(name)
+	if !ok || value == "" {
+		return "", fmt.Errorf("required environment variable %s is not set", name)
+	}
+	return value, nil
+}
+
+func postgresURL() (string, error) {
+	host, err := requiredEnv("POSTGRES_HOST")
+	if err != nil {
+		return "", err
+	}
+	port, err := requiredEnv("POSTGRES_PORT")
+	if err != nil {
+		return "", err
+	}
+	database, err := requiredEnv("POSTGRES_DB")
+	if err != nil {
+		return "", err
+	}
+	user, err := requiredEnv("POSTGRES_USER")
+	if err != nil {
+		return "", err
+	}
+	password, err := requiredEnv("POSTGRES_PASSWORD")
+	if err != nil {
+		return "", err
+	}
+
+	connectionURL := url.URL{
+		Scheme: "postgres",
+		User:   url.UserPassword(user, password),
+		Host:   net.JoinHostPort(host, port),
+		Path:   "/" + database,
+	}
+	return connectionURL.String(), nil
+}
+
 func main() {
 	ctx := context.Background()
-	db, err := pgxpool.New(
-		ctx,
-		"postgres://science:science@localhost:5432/science_schools?sslmode=disable",
-	)
+	connectionString, err := postgresURL()
+	if err != nil {
+		fmt.Println("Ошибка конфигурации:", err)
+		return
+	}
+	db, err := pgxpool.New(ctx, connectionString)
 	if err != nil {
 		fmt.Println("Ошибка подключения:", err)
 		return

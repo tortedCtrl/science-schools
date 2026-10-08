@@ -13,20 +13,19 @@ sudo apt install -y build-essential cmake ninja-build git zip unzip tar curl pkg
 
 ## Настройка локального окружения
 
-Проект использует файл `.env` для управления локальными путями зависимостей, что исключает необходимость хардкодить пути внутри конфигурации CMake.
+Скопировать содержание `/.env.example` из корня проекта в `/.env`, заполнить пароли своими значениями.
 
-1. Создайте файл `.env` в корневой папке `backend/`:
-   ```bash
-   touch .env
-   ```
-2. Откройте файл `.env` и укажите абсолютный путь к вашему локальному менеджеру пакетов `vcpkg`:
-   ```env
-   VCPKG_ROOT=/home/ВАШ_ПОЛЬЗОВАТЕЛЬ_WSL/vcpkg
-   ```
+Для сборки C++ отдельно используется `science-schools/.env` (**из корня репозитория**) с локальным путём к vcpkg:
+
+```env
+VCPKG_ROOT=/home/ВАШ_ПОЛЬЗОВАТЕЛЬ_WSL/vcpkg
+```
+
 
 ## Использование и запуск (Команды Makefile)
 
 Все команды сборки автоматически считывают переменную `VCPKG_ROOT` из вашего локального файла `.env`.
+Сборка из директории `/backend/`
 
 1. **Первоначальная инициализация сборки (выполняется один раз):**
    ```bash
@@ -49,3 +48,20 @@ sudo apt install -y build-essential cmake ninja-build git zip unzip tar curl pkg
 
 
 Движок фиксирует изменения методом `g.update()`, выполняет параллельный расчет Лейдена через OpenMP и выводит структуру распределения авторов по научным школам в терминал.
+
+## Запуск модулей
+
+psotgres:
+
+    docker compose down -v
+    docker compose up --build -d
+
+backend (из директории backend):
+
+    make clean && make init 
+    make run
+
+frontend (из директории frontend):
+
+    npm install
+    npm run dev

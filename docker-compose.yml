@@ -1,7 +1,7 @@
 services:
   postgres:
     image: postgres:16
-    container_name: science-postgres-data
+    container_name: postgres-data
 
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
@@ -11,7 +11,32 @@ services:
     ports:
       - "127.0.0.1:${POSTGRES_PUBLISHED_PORT:-5432}:${POSTGRES_PORT:-5432}"
     volumes:
-      - science-postgres-data:/var/lib/postgresql/data
+      - postgres-data:/var/lib/postgresql/data
       - ./backend/sql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro,z
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    environment:
+      BACKEND_IN_DOCKER: "true"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
 volumes:
-  science-postgres-data:
+  postgres-data:

@@ -4,7 +4,7 @@
 
 ## Требования к окружению (WSL: Ubuntu)
 
-Перед сборкой необходимо установить компилятор с поддержкой C++20, систему сборки CMake, менеджер пакетов vcpkg и библиотеку OpenMP для параллельных вычислений.
+Для локальной сборки необходимы компилятор C++20 и OpenMP, CMake, vcpkg, а также инструменты Git, Ninja, zip/unzip, tar, curl и pkg-config.
 
 ```bash
 sudo apt update
@@ -24,8 +24,7 @@ VCPKG_ROOT=/home/ВАШ_ПОЛЬЗОВАТЕЛЬ_WSL/vcpkg
 
 ## Использование и запуск (Команды Makefile)
 
-Все команды сборки автоматически считывают переменную `VCPKG_ROOT` из вашего локального файла `.env`.
-Сборка из директории `/backend/`
+Для локальной сборки укажите `VCPKG_ROOT` в `.env` в корне репозитория. Сборка выполняется из директории `/backend/`.
 
 1. **Первоначальная инициализация сборки (выполняется один раз):**
    ```bash
@@ -51,12 +50,15 @@ VCPKG_ROOT=/home/ВАШ_ПОЛЬЗОВАТЕЛЬ_WSL/vcpkg
 
 ## Запуск модулей
 
-psotgres:
+PostgreSQL и backend:
 
-    docker compose down -v
     docker compose up --build -d
 
-backend (из директории backend):
+Только PostreSQL:
+
+    docker compose up postgres --build -d
+
+backend локально (из директории backend):
 
     make clean && make init 
     make run

@@ -12,7 +12,7 @@ build:
 	cmake --build build
 
 run: build
-	set -a; . ../.env; set +a; ./build/apps/server/backend_server
+	set -a; . ../.env; set +a; BACKEND_IN_DOCKER=false ./build/apps/server/backend_server
 
 clean:
 	rm -rf build/

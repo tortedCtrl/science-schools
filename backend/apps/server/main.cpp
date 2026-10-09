@@ -4,10 +4,11 @@
 #include <iostream>
 #include <cstdlib>
 #include <stdexcept>
+#include <string_view>
 #include "nlohmann/json.hpp"
 
 namespace {
-std::string requiredConninfoValue(const char* name) { // не должна быть обычной строкой т.к. данные
+std::string requiredConninfoValue(const char* name) {
     const char* value = std::getenv(name);
     if (value == nullptr || value[0] == '\0') {
         throw std::runtime_error(std::string("Required environment variable is not set: ") + name);
@@ -29,14 +30,20 @@ int main() {
     try {
         std::cout << "1. Creating DBClient..." << std::endl;
 
+        const char* backendInDocker = std::getenv("BACKEND_IN_DOCKER");
+        const char* postgresPortEnv =
+            backendInDocker != nullptr && std::string_view(backendInDocker) == "true"
+                ? "POSTGRES_PORT"
+                : "POSTGRES_PUBLISHED_PORT";
+
         std::string connection_string = // вынести логику
             "host=" + requiredConninfoValue("POSTGRES_HOST") +
-            " port=" + requiredConninfoValue("POSTGRES_PUBLISHED_PORT") +
+            " port=" + requiredConninfoValue(postgresPortEnv) +
             " dbname=" + requiredConninfoValue("POSTGRES_DB") +
             " user=" + requiredConninfoValue("POSTGRES_USER") +
             " password=" + requiredConninfoValue("POSTGRES_PASSWORD");
 
-        DBClient db(connection_string); // обработать исключение, чтобы connection_string не утекла в логи
+        DBClient db(connection_string);
 
         std::cout << "2. DB connected" << std::endl;
 

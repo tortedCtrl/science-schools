@@ -23,6 +23,7 @@ target_include_directories(
 
 find_package(fmt CONFIG REQUIRED)
 find_package(OpenMP REQUIRED)
+find_package(httplib CONFIG REQUIRED)
 
 target_link_libraries(
     backend_core
@@ -34,4 +35,5 @@ target_link_libraries(
         OpenMP::OpenMP_CXX
         CURL::libcurl
         nlohmann_json::nlohmann_json
+        httplib::httplib
 )

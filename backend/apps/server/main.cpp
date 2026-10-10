@@ -6,7 +6,8 @@
 #include <stdexcept>
 #include <string_view>
 #include "nlohmann/json.hpp"
-
+#include <httplib.h>
+#include "routes.hpp"
 namespace {
 std::string requiredConninfoValue(const char* name) {
     const char* value = std::getenv(name);
@@ -45,40 +46,13 @@ int main() {
 
         DBClient db(connection_string);
 
-        std::cout << "2. DB connected" << std::endl;
+        httplib::Server server;
 
-        OpenAlexClient openalex;
+        register_routes(server, db);
 
-        std::cout << "3. Starting OpenAlex import" << std::endl;
-        openalex.loadDataBase(db, 10);
+        std::cout << "Server started on port 8080\n";
 
-        std::cout << "4. OpenAlex import finished" << std::endl;
-
-        auto edges = db.get_coauthorship_edges();
-
-        std::cout << "5. Edges: "
-            << edges.size()
-            << std::endl;
-
-        if (edges.empty()) {
-            std::cout << "Graph is empty" << std::endl;
-            return 1;
-        }
-
-        double gamma = 1.0;
-
-        std::cout << "6. Starting Leiden" << std::endl;
-
-        auto communities =
-            LeidenWrapper::run_leiden(edges, gamma);
-
-        std::cout << "7. Communities calculated: "
-            << communities.size()
-            << std::endl;
-
-        db.update_communities(communities);
-
-        std::cout << "8. Communities saved" << std::endl;
+        server.listen("0.0.0.0", 8080);
     }
     catch (const soci::soci_error& e) {
         std::cerr

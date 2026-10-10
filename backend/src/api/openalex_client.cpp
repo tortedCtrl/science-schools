@@ -137,8 +137,12 @@ void OpenAlexClient::loadDataBase(DBClient& db, int max_authors) {
         }
 
         std::string work_cursor = "*";
+        const int max_pages = 1;
+        int page = 0;
+        while (page < max_pages) {
+            ++page;
+            std::cout << "Downloading works page " << page << "..." << std::endl;
 
-        while (true) {
             std::string url = "https://api.openalex.org/works?"
                             "filter=authorships.author.id:" + url_encode(author_filter) +
                             "&select=id,title,publication_year,authorships"

@@ -50,9 +50,13 @@ int main() {
 
         register_routes(server, db);
 
-        std::cout << "Server started on port 8080\n";
+        std::string host = std::getenv("BACKEND_HOST");
+        int port = std::stoi(std::getenv("BACKEND_PORT"));
 
-        server.listen("0.0.0.0", 8080);
+        std::cout << "DEBUG: Host is '" << host << "', Port is " << port << std::endl;
+
+        bool status = server.listen(host, port);
+        std::cout << status << std::endl;
     }
     catch (const soci::soci_error& e) {
         std::cerr

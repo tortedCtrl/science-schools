@@ -75,17 +75,17 @@ void DBClient::clear_import_data() {
 }
 
 void DBClient::insert_author(int id, const std::string& openalex_id, const std::string& name, const std::string& institution_name) {
-    sql_ << "INSERT INTO authors (id, openalex_id, name, institution_name) VALUES (:id, :openalex_id, :name, :institution_name)", soci::use(id), soci::use(openalex_id), soci::use(name), soci::use(institution_name);
+    sql_ << "INSERT INTO authors (id, openalex_id, name, institution_name) VALUES (:id, :openalex_id, :name, :institution_name) on conflict do nothing", soci::use(id), soci::use(openalex_id), soci::use(name), soci::use(institution_name);
 }
 
 void DBClient::insert_article(const std::string& id, const std::string& title, int year) {
-    sql_ << "INSERT INTO articles (id, title, year) VALUES (:id, :title, :year)", soci::use(id), soci::use(title), soci::use(year);
+    sql_ << "INSERT INTO author_meta_articles (id, title, year) VALUES (:id, :title, :year) on conflict (id) do nothing", soci::use(id), soci::use(title), soci::use(year);
 }
 
 void DBClient::insert_author_article(int author_id, const std::string& article_id) {
-    sql_ << "INSERT INTO author_to_article (author_id, article_id) VALUES (:author_id, :article_id)", soci::use(author_id), soci::use(article_id);
+    sql_ << "INSERT INTO author_to_article (author_id, article_id) VALUES (:author_id, :article_id) on conflict do nothing", soci::use(author_id), soci::use(article_id);
 }
 
 void DBClient::insert_edge(int source, int target, int weight) {
-    sql_ << "INSERT INTO coauthorship_edges (source_author_id, target_author_id, weight) VALUES (:source, :target, :weight)", soci::use(source), soci::use(target), soci::use(weight);
+    sql_ << "INSERT INTO coauthorship_edges (source_author_id, target_author_id, weight) VALUES (:source, :target, :weight) on conflict do nothing", soci::use(source), soci::use(target), soci::use(weight);
 }

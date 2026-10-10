@@ -25,6 +25,7 @@ find_package(
 
 find_package(CURL REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
+find_package(httplib CONFIG REQUIRED)
 if(MSVC)
     add_compile_options(/W4)
 else()

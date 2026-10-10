@@ -33,6 +33,31 @@ void DBClient::update_communities(const std::vector<uint32_t>& communities) {
     tr.commit();
 }
 
+std::string DBClient::get_all_authors_json() {
+    nlohmann::json result = nlohmann::json::array();
+    soci::rowset<soci::row> rows =
+        (sql_.prepare <<
+            "SELECT id, openalex_id, name, community_id, institution_name "
+            "FROM authors ORDER BY id");
+
+    for (const auto& row : rows) {
+        nlohmann::json author;
+        author["id"] = row.get<int>(0);
+        author["openalex_id"] = row.get<std::string>(1);
+        author["name"] = row.get<std::string>(2);
+        if (row.get_indicator(3) != soci::i_null)
+            author["community_id"] = row.get<int>(3);
+        else
+            author["community_id"] = nullptr;
+        if (row.get_indicator(4) != soci::i_null)
+            author["institution_name"] = row.get<std::string>(4);
+        else
+            author["institution_name"] = nullptr;
+        result.push_back(author);
+    }
+    return result.dump();
+}
+
 std::string DBClient::get_author_card_json(uint32_t author_id){
     nlohmann::json result;
     soci::rowset<soci::row> rows = (sql_.prepare << "SELECT openalex_id, name, community_id, institution_name, art.id, art.title, art.year FROM authors a LEFT JOIN author_to_article ata ON ata.author_id = a.id LEFT JOIN author_meta_articles art ON art.id = ata.article_id WHERE a.id = :author_id ORDER BY art.year DESC NULLS LAST LIMIT 5", soci::use(author_id));

@@ -46,6 +46,9 @@ int main() {
 
         DBClient db(connection_string);
 
+        OpenAlexClient client;
+        client.loadDataBase(db, 10);
+
         httplib::Server server;
 
         register_routes(server, db);

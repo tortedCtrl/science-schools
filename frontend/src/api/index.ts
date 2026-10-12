@@ -11,9 +11,9 @@ const httpClient = axios.create({
 });
 
 export const api = {
-  get: <T = unknown>(url = '/api', config?: AxiosRequestConfig) =>
+  get: <T = unknown>(url = '/', config?: AxiosRequestConfig) =>
     httpClient.get<T>(url, config),
 
-  post: <T = unknown>(url = '/api', data?: unknown, config?: AxiosRequestConfig) =>
+  post: <T = unknown>(url = '/', data?: unknown, config?: AxiosRequestConfig) =>
     httpClient.post<T>(url, data, config),
 };

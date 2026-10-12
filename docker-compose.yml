@@ -24,13 +24,16 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    container_name: backend
     dns:
       - 8.8.8.8
       - 1.1.1.1
     environment:
       BACKEND_IN_DOCKER: "true"
       BACKEND_PORT: ${BACKEND_PORT}
-      BACKEND_HOST: ${BACKEND_HOST}
+      BACKEND_HOST: 0.0.0.0
+      FRONTEND_HOST: ${FRONTEND_HOST}
+      FRONTEND_PORT: ${FRONTEND_PORT}
       POSTGRES_HOST: postgres
       POSTGRES_PORT: ${POSTGRES_PORT:-5432}
       POSTGRES_USER: ${POSTGRES_USER}

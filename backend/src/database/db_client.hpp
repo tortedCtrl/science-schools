@@ -31,7 +31,7 @@ public:
 
     // 3. Быстрый запрос для API (фронтенда) при клике на автора
     std::string get_author_card_json(uint32_t author_id);
-
+    std::string get_all_authors_json();
     void clear_import_data();
     void insert_author(int id, const std::string& openalex_id, const std::string& name, const std::string& institution_name);
     void insert_article(const std::string& id, const std::string& title, int year);

@@ -5,6 +5,7 @@
     "fmt", 
     "curl", 
     "nlohmann-json",
+    "cpp-httplib",
     {
       "name": "soci",
       "features": [

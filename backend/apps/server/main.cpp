@@ -6,7 +6,8 @@
 #include <stdexcept>
 #include <string_view>
 #include "nlohmann/json.hpp"
-
+#include <httplib.h>
+#include "routes.hpp"
 namespace {
 std::string requiredConninfoValue(const char* name) {
     const char* value = std::getenv(name);
@@ -45,40 +46,20 @@ int main() {
 
         DBClient db(connection_string);
 
-        std::cout << "2. DB connected" << std::endl;
+        OpenAlexClient client;
+        client.loadDataBase(db, 10);
 
-        OpenAlexClient openalex;
+        httplib::Server server;
 
-        std::cout << "3. Starting OpenAlex import" << std::endl;
-        openalex.loadDataBase(db, 10);
+        register_routes(server, db);
 
-        std::cout << "4. OpenAlex import finished" << std::endl;
+        std::string host = std::getenv("BACKEND_HOST");
+        int port = std::stoi(std::getenv("BACKEND_PORT"));
 
-        auto edges = db.get_coauthorship_edges();
+        std::cout << "DEBUG: Host is '" << host << "', Port is " << port << std::endl;
 
-        std::cout << "5. Edges: "
-            << edges.size()
-            << std::endl;
-
-        if (edges.empty()) {
-            std::cout << "Graph is empty" << std::endl;
-            return 1;
-        }
-
-        double gamma = 1.0;
-
-        std::cout << "6. Starting Leiden" << std::endl;
-
-        auto communities =
-            LeidenWrapper::run_leiden(edges, gamma);
-
-        std::cout << "7. Communities calculated: "
-            << communities.size()
-            << std::endl;
-
-        db.update_communities(communities);
-
-        std::cout << "8. Communities saved" << std::endl;
+        bool status = server.listen(host, port);
+        std::cout << status << std::endl;
     }
     catch (const soci::soci_error& e) {
         std::cerr

@@ -17,6 +17,10 @@ export default defineConfig(({ mode }) => {
     return {
         envDir: '..',
         plugins: [react()],
+        server: {
+            port: Number(parentEnv.FRONTEND_PORT || '5173'),
+            strictPort: true,
+        },
 
         define: {
             'import.meta.env.VITE_API_URL': JSON.stringify(apiUrl)

@@ -12,7 +12,10 @@ build:
 	cmake --build build
 
 run: build
-	set -a; . ../.env; set +a; BACKEND_IN_DOCKER=false BACKEND_HOST=127.0.0.1 ./build/apps/server/backend_server
+	set -a; . ../.env; set +a; \
+	BACKEND_HOST=127.0.0.1 \
+	ConnectionStrings__DefaultConnection="host=localhost port=$$POSTGRES_PUBLISHED_PORT dbname=$$POSTGRES_DB user=$$POSTGRES_USER password=$$POSTGRES_PASSWORD" \
+	./build/apps/server/backend_server
 
 clean:
 	rm -rf build/

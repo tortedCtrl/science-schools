@@ -49,7 +49,7 @@ func postgresURL() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	port, err := requiredEnv("POSTGRES_PORT")
+	port, err := requiredEnv("POSTGRES_PUBLISHED_PORT")
 	if err != nil {
 		return "", err
 	}

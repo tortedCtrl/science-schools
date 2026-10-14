@@ -1,10 +1,8 @@
-#include "database/db_client.hpp"   
+#include "database/db_client.hpp"
 #include <nlohmann/json.hpp>
 #include <vector>
 #include <iostream>
 #include <curl/curl.h>
-
-
 
 DBClient::DBClient(const std::string& connection_string) : sql_(soci::postgresql, connection_string){}
 
@@ -36,9 +34,9 @@ void DBClient::update_communities(const std::vector<uint32_t>& communities) {
 std::string DBClient::get_all_authors_json() {
     nlohmann::json result = nlohmann::json::array();
     soci::rowset<soci::row> rows =
-        (sql_.prepare <<
-            "SELECT id, openalex_id, name, community_id, institution_name "
-            "FROM authors ORDER BY id");
+    (sql_.prepare <<
+    "SELECT id, openalex_id, name, community_id, institution_name "
+    "FROM authors ORDER BY id");
 
     for (const auto& row : rows) {
         nlohmann::json author;
@@ -55,6 +53,72 @@ std::string DBClient::get_all_authors_json() {
             author["institution_name"] = nullptr;
         result.push_back(author);
     }
+    return result.dump();
+}
+
+std::string DBClient::get_all_edges_json() {
+    nlohmann::json result = nlohmann::json::array();
+
+    soci::rowset<soci::row> rows =
+    (sql_.prepare <<
+    "SELECT source_author_id, target_author_id, weight "
+    "FROM coauthorship_edges");
+
+    for (const auto& row : rows) {
+        nlohmann::json edge;
+        edge["source"] = std::to_string(row.get<int>(0));
+        edge["target"] = std::to_string(row.get<int>(1));
+        edge["weight"] = row.get<int>(2);
+        result.push_back(edge);
+    }
+
+    return result.dump();
+}
+
+std::string DBClient::get_graph_json() {
+    nlohmann::json result;
+    result["nodes"] = nlohmann::json::array();
+    result["links"] = nlohmann::json::array();
+
+    // --- nodes ---
+    {
+        soci::rowset<soci::row> rows =
+        (sql_.prepare <<
+        "SELECT id, name, community_id, institution_name "
+        "FROM authors ORDER BY id");
+
+        for (const auto& row : rows) {
+            nlohmann::json node;
+            node["id"] = std::to_string(row.get<int>(0));
+            node["name"] = row.get<std::string>(1);
+            if (row.get_indicator(2) != soci::i_null)
+                node["community_id"] = row.get<int>(2);
+            else
+                node["community_id"] = nullptr;
+            if (row.get_indicator(3) != soci::i_null)
+                node["institution_name"] = row.get<std::string>(3);
+            else
+                node["institution_name"] = nullptr;
+            result["nodes"].push_back(node);
+        }
+    }
+
+    // --- links ---
+    {
+        soci::rowset<soci::row> rows =
+        (sql_.prepare <<
+        "SELECT source_author_id, target_author_id, weight "
+        "FROM coauthorship_edges");
+
+        for (const auto& row : rows) {
+            nlohmann::json edge;
+            edge["source"] = std::to_string(row.get<int>(0));
+            edge["target"] = std::to_string(row.get<int>(1));
+            edge["weight"] = row.get<int>(2);
+            result["links"].push_back(edge);
+        }
+    }
+
     return result.dump();
 }
 

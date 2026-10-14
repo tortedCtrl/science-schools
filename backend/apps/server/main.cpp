@@ -26,45 +26,44 @@ int main() {
         std::cout << "1. Creating DBClient..." << std::endl;
         DBClient db(requiredEnvironmentValue("ConnectionStrings__DefaultConnection"));
 
-        OpenAlexClient client;
-        client.loadDataBase(db, 10);
+        // ===== ЗАГРУЗКА ДАННЫХ ИЗ OPENALEX =====
+        // Раскомментируйте, если нужно загрузить данные при старте.
+        // После первой загрузки лучше держать закомментированным,
+        // чтобы сервер стартовал мгновенно.
+        /*
+         *   {
+         *           std::cout << "2. Loading data from OpenAlex..." << std::endl;
+         *           OpenAlexClient loader;
+         *           loader.loadDataBase(db, 100);
+         *           std::cout << "   Data loaded." << std::endl;
+         *   }
+        */
 
         httplib::Server server;
         register_routes(server, db);
+
+        // server.Options(R"(.*)", [](const httplib::Request&, httplib::Response& res) {
+        //     res.status = 204;
+        // }); // Проверить, не дублирует ли
 
         const std::string host = requiredEnvironmentValue("BACKEND_HOST");
         const int port = std::stoi(requiredEnvironmentValue("BACKEND_PORT"));
 
         std::cout << "DEBUG: Host is '" << host << "', Port is " << port << std::endl;
 
-        const bool status = server.listen(host, port);
+        bool status = server.listen(host, port);
         std::cout << status << std::endl;
-        if (!status) {
-            return 1;
-        }
     }
     catch (const soci::soci_error& e) {
-        std::cerr
-            << "SOCI ERROR: "
-            << e.what()
-            << std::endl;
-
+        std::cerr << "SOCI ERROR: " << e.what() << std::endl;
         return 1;
     }
     catch (const nlohmann::json::exception& e) {
-        std::cerr
-            << "JSON ERROR: "
-            << e.what()
-            << std::endl;
-
+        std::cerr << "JSON ERROR: " << e.what() << std::endl;
         return 1;
     }
     catch (const std::exception& e) {
-        std::cerr
-            << "ERROR: "
-            << e.what()
-            << std::endl;
-
+        std::cerr << "ERROR: " << e.what() << std::endl;
         return 1;
     }
 

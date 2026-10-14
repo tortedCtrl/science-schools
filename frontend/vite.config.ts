@@ -18,6 +18,7 @@ export default defineConfig(({ mode }) => {
         envDir: '..',
         plugins: [react()],
         server: {
+            // Можно дополнительно указать host 
             port: Number(parentEnv.FRONTEND_PORT || '5173'),
             strictPort: true,
         },

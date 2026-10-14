@@ -2,24 +2,33 @@
 import React, { useState, useRef, useEffect } from 'react';
 // @ts-ignore
 import ForceGraph2D from 'react-force-graph-2d';
-import { mockGraphData } from './mockData';
+import { useDatabase } from './hooks/backend';
 import './App.css';
 
 export default function App() {
+  const fetchData = useDatabase();
+
   const [searchName, setSearchName] = useState('');
   const [showAll, setShowAll] = useState(true);
   const [searchDepth, setSearchDepth] = useState(1);
   const [vCap, setVCap] = useState<number | ''>(100);
+  const [loading, setLoading] = useState(false);
 
   // Состояния аналитических фич
   const [showHiddenLinks, setShowHiddenLinks] = useState(false);
   const [colorMode, setColorMode] = useState<'type' | 'geo'>('type');
   const [highlightCluster, setHighlightCluster] = useState(false);
 
-  // Состояние графа
-  const [graphData, setGraphData] = useState<any>({
-    nodes: mockGraphData.nodes,
-    links: mockGraphData.links.filter((l) => !l.isHidden),
+  // Полный граф (последний ответ бэкенда)
+  const [fullGraphData, setFullGraphData] = useState<{ nodes: any[]; links: any[] }>({
+    nodes: [],
+    links: [],
+  });
+
+  // Отображаемый граф
+  const [graphData, setGraphData] = useState<{ nodes: any[]; links: any[] }>({
+    nodes: [],
+    links: [],
   });
 
   const [selectedNode, setSelectedNode] = useState<any>(null);
@@ -32,6 +41,7 @@ export default function App() {
   const viewportRef = useRef<HTMLDivElement>(null);
   const [viewportSize, setViewportSize] = useState({ w: 0, h: 0 });
 
+  // Подгонка размера графа под контейнер
   useEffect(() => {
     const el = viewportRef.current;
     if (!el) return;
@@ -55,6 +65,30 @@ export default function App() {
     };
   }, []);
 
+  // Загрузка графа с бэкенда. Возвращает свежие данные.
+  const reloadGraph = async (): Promise<{ nodes: any[]; links: any[] }> => {
+    setLoading(true);
+    try {
+      const data = await fetchData();
+      const full = { nodes: data.nodes, links: data.links };
+      setFullGraphData(full);
+      setGraphData(full);
+      setSelectedNode(null);
+      return full;
+    } catch (e) {
+      console.error('API error:', e);
+      return { nodes: [], links: [] };
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Загрузка при старте
+  useEffect(() => {
+    reloadGraph();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Безопасное чтение ID связей (для обхода d3-объектов)
   const getLinkId = (linkProp: any): string => {
     if (!linkProp) return '';
@@ -62,21 +96,23 @@ export default function App() {
     return String(linkProp);
   };
 
-  // Поиск и фильтрация графа
-  const handleSearch = (e?: React.FormEvent) => {
+  // Поиск: сначала тянем свежий граф, потом фильтруем
+  const handleSearch = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
 
+    const full = await reloadGraph();
+
     const baseLinks = showHiddenLinks
-    ? mockGraphData.links
-    : mockGraphData.links.filter((l) => !l.isHidden);
+    ? full.links
+    : full.links.filter((l: any) => !l.isHidden);
 
     if (showAll || !searchName.trim()) {
-      setGraphData({ nodes: mockGraphData.nodes, links: baseLinks });
+      setGraphData({ nodes: full.nodes, links: baseLinks });
       return;
     }
 
-    const targetNode = mockGraphData.nodes.find(
-      (node) =>
+    const targetNode = full.nodes.find(
+      (node: any) =>
       node.name.toLowerCase().includes(searchName.toLowerCase()) ||
       node.id === searchName
     );
@@ -95,7 +131,7 @@ export default function App() {
     for (let depth = 0; depth < searchDepth; depth++) {
       const nextLayerIds = new Set<string>();
 
-      baseLinks.forEach((link) => {
+      baseLinks.forEach((link: any) => {
         const s = getLinkId(link.source);
         const t = getLinkId(link.target);
 
@@ -113,13 +149,13 @@ export default function App() {
       currentLayerIds = nextLayerIds;
     }
 
-    const filteredLinks = baseLinks.filter((link) => {
+    const filteredLinks = baseLinks.filter((link: any) => {
       const s = getLinkId(link.source);
       const t = getLinkId(link.target);
       return visitedNodeIds.has(s) && visitedNodeIds.has(t);
     });
 
-    let filteredNodes = mockGraphData.nodes.filter((node) =>
+    let filteredNodes = full.nodes.filter((node: any) =>
     visitedNodeIds.has(node.id)
     );
     if (vCap !== '' && filteredNodes.length > vCap) {
@@ -129,23 +165,34 @@ export default function App() {
     setGraphData({ nodes: filteredNodes, links: filteredLinks });
   };
 
-  // Быстрое включение скрытых связей
+  // Быстрое включение скрытых связей (локально, по текущему fullGraphData)
   const toggleHiddenLinks = (checked: boolean) => {
     setShowHiddenLinks(checked);
+
     const baseLinks = checked
-    ? mockGraphData.links
-    : mockGraphData.links.filter((l) => !l.isHidden);
+    ? fullGraphData.links
+    : fullGraphData.links.filter((l: any) => !l.isHidden);
 
     if (showAll || !searchName.trim()) {
-      setGraphData({ nodes: mockGraphData.nodes, links: baseLinks });
+      setGraphData({ nodes: fullGraphData.nodes, links: baseLinks });
     } else {
       const currentNodeIds = new Set(graphData.nodes.map((n: any) => n.id));
-      const filteredLinks = baseLinks.filter((link) => {
+      const filteredLinks = baseLinks.filter((link: any) => {
         const s = getLinkId(link.source);
         const t = getLinkId(link.target);
         return currentNodeIds.has(s) && currentNodeIds.has(t);
       });
-      setGraphData((prev: any) => ({ ...prev, links: filteredLinks }));
+      setGraphData((prev) => ({ ...prev, links: filteredLinks }));
+    }
+  };
+
+  // Галочка «Показать граф полностью» — тянем свежий граф с бэкенда
+  const handleShowAllChange = (checked: boolean) => {
+    setShowAll(checked);
+
+    if (checked) {
+      setSearchName('');
+      reloadGraph();
     }
   };
 
@@ -160,7 +207,6 @@ export default function App() {
     title={leftOpen ? 'Свернуть поиск' : 'Развернуть поиск'}
     aria-label={leftOpen ? 'Свернуть поиск' : 'Развернуть поиск'}
     >
-    {/* Лупа */}
     <svg
     className="handle-icon"
     viewBox="0 0 24 24"
@@ -200,19 +246,7 @@ export default function App() {
     <input
     type="checkbox"
     checked={showAll}
-    onChange={(e) => {
-      const checked = e.target.checked;
-      setShowAll(checked);
-      if (checked) {
-        setSearchName('');
-        setGraphData({
-          nodes: mockGraphData.nodes,
-          links: showHiddenLinks
-          ? mockGraphData.links
-          : mockGraphData.links.filter((l) => !l.isHidden),
-        });
-      }
-    }}
+    onChange={(e) => handleShowAllChange(e.target.checked)}
     />
     Показать граф полностью
     </label>
@@ -245,9 +279,9 @@ export default function App() {
     <button
     type="submit"
     className="btn-submit"
-    disabled={showAll && searchName === ''}
+    disabled={loading}
     >
-    Рассчитать граф
+    {loading ? 'Загрузка...' : 'Рассчитать граф'}
     </button>
     </form>
 
@@ -360,7 +394,7 @@ export default function App() {
     }}
     onNodeClick={(node: any) => {
       setSelectedNode(node);
-      setRightOpen(true); // при клике — раскрыть правую панель
+      setRightOpen(true);
     }}
     linkDirectionalParticles={(link: any) => (link.isHidden ? 5 : 2)}
     linkDirectionalParticleSpeed={0.007}
@@ -379,7 +413,6 @@ export default function App() {
     rightOpen ? 'Свернуть информацию' : 'Развернуть информацию'
   }
   >
-  {/* Иконка "i" */}
   <svg
   className="handle-icon"
   viewBox="0 0 24 24"

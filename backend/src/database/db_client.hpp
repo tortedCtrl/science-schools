@@ -8,12 +8,6 @@
 #include <soci/soci.h>
 #include <soci/postgresql/soci-postgresql.h>
 #include "graph_engine/leiden_wrapper.hpp"
-// Структура ребра для передачи в граф
-// struct CoauthorshipEdge {
-//     uint32_t source_id;
-//     uint32_t target_id;
-//     int weight;
-// };
 
 class DBClient {
 private:
@@ -22,7 +16,7 @@ private:
 
 public:
     explicit DBClient(const std::string& conn_str);
-    
+
     // 1. Выгрузка графа для алгоритма Лейдена
     std::vector<CoauthorshipEdge> get_coauthorship_edges();
 
@@ -32,6 +26,8 @@ public:
     // 3. Быстрый запрос для API (фронтенда) при клике на автора
     std::string get_author_card_json(uint32_t author_id);
     std::string get_all_authors_json();
+    std::string get_all_edges_json();
+    std::string get_graph_json();
     void clear_import_data();
     void insert_author(int id, const std::string& openalex_id, const std::string& name, const std::string& institution_name);
     void insert_article(const std::string& id, const std::string& title, int year);

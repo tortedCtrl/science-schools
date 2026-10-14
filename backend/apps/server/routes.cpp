@@ -66,4 +66,29 @@ void register_routes(
             res.set_content(R"({"error":"internal server error"})", "application/json");
         }
     });
-}
+
+    server.Get("/edges", [&](const httplib::Request&, httplib::Response& res) {
+        try {
+            std::string json = db.get_all_edges_json();
+            res.set_content(json, "application/json");
+            res.status = 200;
+        }
+        catch (const std::exception&) {
+            res.status = 500;
+            res.set_content(R"({"error":"internal server error"})", "application/json");
+        }
+    }
+    );
+
+    server.Get("/graph", [&](const httplib::Request&, httplib::Response& res) {
+        try {
+            std::string json = db.get_graph_json();
+            res.set_content(json, "application/json");
+            res.status = 200;
+        }
+        catch (const std::exception&) {
+            res.status = 500;
+            res.set_content(R"({"error":"internal server error"})", "application/json");
+        }
+    }
+    );

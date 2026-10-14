@@ -23,7 +23,7 @@ void DBClient::update_communities(const std::vector<uint32_t>& communities) {
     soci::transaction tr(sql_);
     int community_id, author_id;
     soci::statement st = (sql_.prepare <<"UPDATE authors SET community_id = :community_id WHERE id = :author_id", soci::use(community_id), soci::use(author_id));
-    for (int i = 0; i < communities.size(); i++) {
+    for (size_t i = 0; i < communities.size(); i++) {
         author_id = i;
         community_id = static_cast<int>(communities[i]);
         st.execute(true);

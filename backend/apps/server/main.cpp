@@ -19,6 +19,11 @@ std::string requiredEnvironmentValue(const char* name) {
     }
     return value;
 }
+
+void setCorsHeaders(httplib::Response& res, const std::string& origin) {
+    res.set_header("Access-Control-Allow-Methods", "GET, OPTIONS");
+    res.set_header("Access-Control-Allow-Headers", "Content-Type, Accept");
+}
 }
 
 int main() {
@@ -30,21 +35,26 @@ int main() {
         // Раскомментируйте, если нужно загрузить данные при старте.
         // После первой загрузки лучше держать закомментированным,
         // чтобы сервер стартовал мгновенно.
-        /*
-         *   {
-         *           std::cout << "2. Loading data from OpenAlex..." << std::endl;
-         *           OpenAlexClient loader;
-         *           loader.loadDataBase(db, 100);
-         *           std::cout << "   Data loaded." << std::endl;
-         *   }
-        */
+
+        // {
+        //     std::cout << "2. Loading data from OpenAlex..." << std::endl;
+        //     OpenAlexClient loader;
+        //     loader.loadDataBase(db, 100);
+        //     std::cout << "   Data loaded." << std::endl;
+        // }
+
 
         httplib::Server server;
         register_routes(server, db);
 
-        // server.Options(R"(.*)", [](const httplib::Request&, httplib::Response& res) {
-        //     res.status = 204;
-        // }); // Проверить, не дублирует ли
+        server.set_post_routing_handler([](const httplib::Request& req, httplib::Response& res) {
+            std::string origin = req.get_header_value("Origin");
+            if (origin == "http://127.0.0.1:" + requiredEnvironmentValue("FRONTEND_PORT")
+                || origin == "http://localhost:" + requiredEnvironmentValue("FRONTEND_PORT")) {
+                res.set_header("Access-Control-Allow-Origin", origin);
+            }
+            setCorsHeaders(res, origin);
+            });
 
         const std::string host = requiredEnvironmentValue("BACKEND_HOST");
         const int port = std::stoi(requiredEnvironmentValue("BACKEND_PORT"));

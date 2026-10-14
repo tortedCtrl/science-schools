@@ -7,6 +7,7 @@
 DBClient::DBClient(const std::string& connection_string) : sql_(soci::postgresql, connection_string){}
 
 std::vector<CoauthorshipEdge> DBClient::get_coauthorship_edges() {
+    sql_ << "DEALLOCATE ALL";
     std::vector<CoauthorshipEdge> edges;
     soci::rowset<soci::row> rows = (sql_.prepare <<"SELECT source_author_id, target_author_id, weight FROM coauthorship_edges");
     for (const auto& row:rows) {
@@ -20,6 +21,7 @@ std::vector<CoauthorshipEdge> DBClient::get_coauthorship_edges() {
 }
 
 void DBClient::update_communities(const std::vector<uint32_t>& communities) {
+    sql_ << "DEALLOCATE ALL";
     soci::transaction tr(sql_);
     int community_id, author_id;
     soci::statement st = (sql_.prepare <<"UPDATE authors SET community_id = :community_id WHERE id = :author_id", soci::use(community_id), soci::use(author_id));
@@ -32,6 +34,7 @@ void DBClient::update_communities(const std::vector<uint32_t>& communities) {
 }
 
 std::string DBClient::get_all_authors_json() {
+    sql_ << "DEALLOCATE ALL";
     nlohmann::json result = nlohmann::json::array();
     soci::rowset<soci::row> rows =
     (sql_.prepare <<
@@ -57,6 +60,7 @@ std::string DBClient::get_all_authors_json() {
 }
 
 std::string DBClient::get_all_edges_json() {
+    sql_ << "DEALLOCATE ALL";
     nlohmann::json result = nlohmann::json::array();
 
     soci::rowset<soci::row> rows =
@@ -76,6 +80,7 @@ std::string DBClient::get_all_edges_json() {
 }
 
 std::string DBClient::get_graph_json() {
+    sql_ << "DEALLOCATE ALL";
     nlohmann::json result;
     result["nodes"] = nlohmann::json::array();
     result["links"] = nlohmann::json::array();
@@ -123,6 +128,7 @@ std::string DBClient::get_graph_json() {
 }
 
 std::string DBClient::get_author_card_json(uint32_t author_id){
+    sql_ << "DEALLOCATE ALL";
     nlohmann::json result;
     soci::rowset<soci::row> rows = (sql_.prepare << "SELECT openalex_id, name, community_id, institution_name, art.id, art.title, art.year FROM authors a LEFT JOIN author_to_article ata ON ata.author_id = a.id LEFT JOIN author_meta_articles art ON art.id = ata.article_id WHERE a.id = :author_id ORDER BY art.year DESC NULLS LAST LIMIT 5", soci::use(author_id));
     bool fl = false;
@@ -155,6 +161,7 @@ std::string DBClient::get_author_card_json(uint32_t author_id){
 }
 
 void DBClient::clear_import_data() {
+    sql_ << "DEALLOCATE ALL";
     soci::transaction tr(sql_);
     sql_ << "DELETE FROM author_to_article";
     sql_ << "DELETE FROM coauthorship_edges";
@@ -164,17 +171,21 @@ void DBClient::clear_import_data() {
 }
 
 void DBClient::insert_author(int id, const std::string& openalex_id, const std::string& name, const std::string& institution_name) {
+    sql_ << "DEALLOCATE ALL";
     sql_ << "INSERT INTO authors (id, openalex_id, name, institution_name) VALUES (:id, :openalex_id, :name, :institution_name) on conflict do nothing", soci::use(id), soci::use(openalex_id), soci::use(name), soci::use(institution_name);
 }
 
 void DBClient::insert_article(const std::string& id, const std::string& title, int year) {
+    sql_ << "DEALLOCATE ALL";
     sql_ << "INSERT INTO author_meta_articles (id, title, year) VALUES (:id, :title, :year) on conflict (id) do nothing", soci::use(id), soci::use(title), soci::use(year);
 }
 
 void DBClient::insert_author_article(int author_id, const std::string& article_id) {
+    sql_ << "DEALLOCATE ALL";
     sql_ << "INSERT INTO author_to_article (author_id, article_id) VALUES (:author_id, :article_id) on conflict do nothing", soci::use(author_id), soci::use(article_id);
 }
 
 void DBClient::insert_edge(int source, int target, int weight) {
+    sql_ << "DEALLOCATE ALL";
     sql_ << "INSERT INTO coauthorship_edges (source_author_id, target_author_id, weight) VALUES (:source, :target, :weight) on conflict do nothing", soci::use(source), soci::use(target), soci::use(weight);
 }

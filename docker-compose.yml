@@ -19,6 +19,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    networks:
+      - backend
 
   backend:
     build:
@@ -38,6 +40,19 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    networks:
+      - backend
 
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: "http://${BACKEND_HOST:-127.0.0.1}:${BACKEND_PORT:-8080}"
+    ports:
+      - "${FRONTEND_PORT:-5173}:80"
+    networks:
+      - backend
 volumes:
   postgres-data:
+networks:
+  backend:

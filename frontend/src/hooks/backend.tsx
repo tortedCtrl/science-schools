@@ -18,7 +18,8 @@ type GraphNode = {
 type GraphLink = {
     source: string;
     target: string;
-    weight: number;
+    //weight: number;
+    isHidden: boolean;
 };
 
 type GraphResponse = {
@@ -26,8 +27,8 @@ type GraphResponse = {
     links: GraphLink[];
 };
 
-export function useDatabase(): () => Promise<DatabaseResponse> { // Не соотвествует контракту DatabaseResponse, требует исправления типизации
-    async function fetchData(): Promise<DatabaseResponse> {
+export function useDatabase(): () => Promise<GraphResponse> {
+    async function fetchData(): Promise<GraphResponse> {
         const res = await api.get<GraphResponse>('/graph');
         const data = res.data;
 

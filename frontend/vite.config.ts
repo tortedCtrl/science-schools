@@ -9,7 +9,7 @@ export default defineConfig(({ mode }) => {
 
     const parentEnv = loadEnv(mode, path.resolve(_dirname, '..'), '');
 
-    const host = parentEnv.BACKEND_HOST || '127.0.0.1';
+    const host = /* parentEnv.BACKEND_HOST || */ '127.0.0.1';
     const port = parentEnv.BACKEND_PORT || '8080';
 
     const apiUrl = `http://${host}:${port}`;

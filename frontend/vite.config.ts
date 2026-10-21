@@ -18,9 +18,20 @@ export default defineConfig(({ mode }) => {
         envDir: '..',
         plugins: [react()],
         server: {
-            // Можно дополнительно указать host 
+            // Можно дополнительно указать host
             port: Number(parentEnv.FRONTEND_PORT || '5173'),
             strictPort: true,
+
+            // Прокси на бэкенд: браузер ходит на localhost:5173/api/*,
+            // Vite переправляет на http://<host>:<port>/* (срезая /api).
+            // Это снимает CORS без изменений на бэкенде.
+            proxy: {
+                '/api': {
+                    target: apiUrl,
+                    changeOrigin: true,
+                    rewrite: (p) => p.replace(/^\/api/, ''),
+                },
+            },
         },
 
         define: {

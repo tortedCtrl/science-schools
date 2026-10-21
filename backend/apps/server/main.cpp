@@ -30,18 +30,18 @@ int main() {
     try {
         std::cout << "1. Creating DBClient..." << std::endl;
         DBClient db(requiredEnvironmentValue("ConnectionStrings__DefaultConnection"));
-
+        db.clear_import_data();
         // ===== ЗАГРУЗКА ДАННЫХ ИЗ OPENALEX =====
         // Раскомментируйте, если нужно загрузить данные при старте.
         // После первой загрузки лучше держать закомментированным,
         // чтобы сервер стартовал мгновенно.
 
-        // {
-        //     std::cout << "2. Loading data from OpenAlex..." << std::endl;
-        //     OpenAlexClient loader;
-        //     loader.loadDataBase(db, 100);
-        //     std::cout << "   Data loaded." << std::endl;
-        // }
+        {
+            std::cout << "2. Loading data from OpenAlex..." << std::endl;
+            OpenAlexClient loader;
+            loader.loadDataBase(db, 100);
+            std::cout << "   Data loaded." << std::endl;
+        }
 
 
         httplib::Server server;
@@ -62,7 +62,7 @@ int main() {
         std::cout << "DEBUG: Host is '" << host << "', Port is " << port << std::endl;
 
         bool status = server.listen(host, port);
-        std::cout << status << std::endl;
+        
     }
     catch (const soci::soci_error& e) {
         std::cerr << "SOCI ERROR: " << e.what() << std::endl;

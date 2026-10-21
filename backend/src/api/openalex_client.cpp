@@ -83,13 +83,13 @@ std::string OpenAlexClient::get(const std::string& url) {
 }
 void OpenAlexClient::loadDataBase(DBClient& db, int max_authors) {
     std::vector<RawAuthor> authors;
-    std::string cursor = "*";
+    int page = 1;
     while (authors.size() < static_cast<size_t>(max_authors)) {
         std::string url =
             "https://api.openalex.org/authors?"
             "filter=last_known_institutions.country_code:RU"
-            "&per_page=100"
-            "&cursor=" + url_encode(cursor);
+            "&per_page=10"
+            "&page=" +std::to_string(page);
         std::string body = get(url);
         nlohmann::json data = nlohmann::json::parse(body);
         for (const auto& author : data["results"]) {
@@ -105,12 +105,8 @@ void OpenAlexClient::loadDataBase(DBClient& db, int max_authors) {
                 break;
             }
         }
-        if ( data["meta"]["next_cursor"].is_null() ) {
-            break;
-        }
-        cursor = data["meta"]["next_cursor"].get<std::string>();
-        
         std::cout << "Downloaded authors: " << authors.size() << '\n';
+        page++;
     }
     std::unordered_map<std::string, RawAuthor> authors_by_id;
     for (const auto& author : authors) {
@@ -119,7 +115,7 @@ void OpenAlexClient::loadDataBase(DBClient& db, int max_authors) {
     std::unordered_map<std::string, RawArticle> articles_by_id;
     std::unordered_set<std::string> seen_works;
     std::map<std::pair<std::string, std::string>,int> edge_weights;
-    const size_t batch_size = 100;
+    const size_t batch_size = 10;
     for (size_t batch_start = 0; batch_start < authors.size(); batch_start += batch_size) {
         std::string author_filter;
         size_t batch_end = (std::min)(batch_start + batch_size, authors.size());
@@ -135,19 +131,18 @@ void OpenAlexClient::loadDataBase(DBClient& db, int max_authors) {
             }
             author_filter += id;
         }
-
-        std::string work_cursor = "*";
-        const int max_pages = 1;
-        int page = 0;
-        while (page < max_pages) {
-            ++page;
-            std::cout << "Downloading works page " << page << "..." << std::endl;
-
+        int p = 0;
+        page = 0;
+        const int max_pages = 2;
+        while (p < max_pages) {
+            ++p;
+            page++;
+            std::cout << "Downloading works page " << p << "..." << std::endl;
             std::string url = "https://api.openalex.org/works?"
                             "filter=authorships.author.id:" + url_encode(author_filter) +
                             "&select=id,title,publication_year,authorships"
-                            "&per_page=100"
-                            "&cursor=" + url_encode(work_cursor);
+                            "&per_page=20"
+                            "&page=" +std::to_string(page);
 
             std::string body = get(url);
             nlohmann::json data = nlohmann::json::parse(body);
@@ -214,12 +209,6 @@ void OpenAlexClient::loadDataBase(DBClient& db, int max_authors) {
                     }
                 }
             }
-
-            if (data["meta"]["next_cursor"].is_null()) {
-                break;
-            }
-
-            work_cursor = data["meta"]["next_cursor"].get<std::string>();
         }
     }
     std::unordered_set<std::string> connected_authors;

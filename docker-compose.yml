@@ -1,0 +1,60 @@
+services:
+  db:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_USER: schools
+      MYSQL_PASSWORD: schools
+      MYSQL_DATABASE: schools
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_0900_ai_ci"]
+    volumes:
+      - dbdata:/var/lib/mysql
+    ports:
+      - "3306:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uschools", "-pschools"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build: .
+    command: ["serve"]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment: &app-env
+      DB_HOST: db
+      DB_PORT: "3306"
+      DB_USER: schools
+      DB_PASSWORD: schools
+      DB_NAME: schools
+      OPENALEX_MAILTO: ${OPENALEX_MAILTO:-}
+      OPENALEX_API_KEY: ${OPENALEX_API_KEY:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      - "8080:8080"
+
+  # One-off jobs:
+  #   docker compose --profile jobs run --rm ingest --from-year=2020 --to-year=2025
+  #   docker compose --profile jobs run --rm cluster
+  ingest:
+    build: .
+    profiles: ["jobs"]
+    entrypoint: ["scientific_schools", "ingest"]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment: *app-env
+
+  cluster:
+    build: .
+    profiles: ["jobs"]
+    entrypoint: ["scientific_schools", "cluster"]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment: *app-env
+
+volumes:
+  dbdata:

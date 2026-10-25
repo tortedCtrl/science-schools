@@ -1,5 +1,4 @@
 // src/components/InfoPanel/InfoPanel.tsx
-import React from 'react';
 
 export interface InfoPanelProps {
   selectedNode: any;

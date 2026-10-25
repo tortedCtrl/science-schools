@@ -1,5 +1,4 @@
 // src/components/SearchPanel/SearchPanel.tsx
-import React from 'react';
 import type { SearchPanelProps } from './SearchPanel.types';
 
 export function SearchPanel({

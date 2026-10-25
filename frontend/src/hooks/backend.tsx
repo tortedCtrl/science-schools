@@ -35,6 +35,7 @@ export function useDatabase(): () => Promise<GraphResponse> {
         const nodes = (data.nodes ?? []).map((n) => ({
             id: String(n.id),
             name: n.name,
+            community_id: n.community_id ?? null,
             val: 1,
             type: 'person' as const,
             location: (n.institution_name ? 'RU' : 'INT') as 'RU' | 'INT',

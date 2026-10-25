@@ -1,6 +1,5 @@
 // src/components/GraphView/GraphView.tsx
-import React from 'react';
-// @ts-expect-error -- у пакета нет собственных типов / @types
+
 import ForceGraph2D from 'react-force-graph-2d';
 import type { GraphViewProps } from './GraphView.types';
 
@@ -38,9 +37,11 @@ export function GraphView({
             ctx.arc(posX, posY, 8, 0, 2 * Math.PI, false);
 
             if (highlightCluster) {
-              ctx.fillStyle = ['1', '2', '3', '12'].includes(node.id)
-                ? '#faad14'
-                : '#555555';
+              const communityId = node.community_id;
+              ctx.fillStyle =
+                communityId == null
+                  ? '#555555'
+                  : `hsl(${(communityId * 137.508) % 360} 70% 55%)`;
             } else if (colorMode === 'geo') {
               ctx.fillStyle = node.location === 'INT' ? '#ff4d4f' : '#1890ff';
             } else {

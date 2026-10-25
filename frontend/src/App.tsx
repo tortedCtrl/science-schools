@@ -40,7 +40,7 @@ export default function App() {
   const [rightOpen, setRightOpen] = useState(true);
 
   // Размер вьюпорта для ForceGraph2D
-  const viewportRef = useRef<HTMLDivElement>(null);
+  const viewportRef = useRef<HTMLDivElement>(null!);
   const [viewportSize, setViewportSize] = useState({ w: 0, h: 0 });
 
   // Подгонка размера графа под контейнер

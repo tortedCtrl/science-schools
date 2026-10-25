@@ -39,10 +39,15 @@ int main() {
         {
             std::cout << "2. Loading data from OpenAlex..." << std::endl;
             OpenAlexClient loader;
-            loader.loadDataBase(db, 100);
+            loader.loadDataBase(db, 500);
             std::cout << "   Data loaded." << std::endl;
         }
 
+        std::cout << "3. Calculating author communities..." << std::endl;
+        const auto edges = db.get_coauthorship_edges();
+        const auto communities = LeidenWrapper::run_leiden(edges, 1.25);
+        db.update_communities(communities);
+        std::cout << "   Communities saved: " << communities.size() << std::endl;
 
         httplib::Server server;
         register_routes(server, db);

@@ -1,12 +1,14 @@
-FROM debian:bookworm-slim AS builder
+FROM gcc:15.1-bookworm AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive VCPKG_ROOT=/opt/vcpkg VCPKG_FORCE_SYSTEM_BINARIES=1
 
-RUN apt-get update \
+# bookworm ships CMake 3.25, so take a newer one from backports.
+RUN echo "deb http://deb.debian.org/debian bookworm-backports main" \
+        > /etc/apt/sources.list.d/bookworm-backports.list \
+    && apt-get update \
     && apt-get install -y --no-install-recommends \
-        build-essential \
         ca-certificates \
-        cmake \
+        cmake/bookworm-backports \
         curl \
         libgomp1 \
         git \
@@ -28,7 +30,7 @@ WORKDIR /src
 # Кэширование библиотек
 COPY vcpkg.json .
 RUN --mount=type=cache,target=/root/.cache/vcpkg \
-    echo "cmake_minimum_required(VERSION 3.15)\nproject(dummy LANGUAGES C CXX)" > CMakeLists.txt \
+    echo "cmake_minimum_required(VERSION 3.30)\nproject(dummy LANGUAGES C CXX)" > CMakeLists.txt \
     && cmake -G Ninja -B build -S . \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
@@ -41,14 +43,16 @@ RUN --mount=type=cache,target=/root/.ccache \
     cmake -G Ninja -B build -S . \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
+        -DSTATIC_RUNTIME=ON \
         -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
         -DCMAKE_C_COMPILER_LAUNCHER=ccache \
-    && cmake --build build
+    && cmake --build build \
+    && find /usr/local /usr -name 'libgomp.so.1' -exec cp {} /tmp/libgomp.so.1 \; -quit
 
-# Образ для исполнения    
+# Образ для исполнения
 FROM gcr.io/distroless/cc-debian12 AS runtime
 
-COPY --from=builder /usr/lib/x86_64-linux-gnu/libgomp.so.1 /usr/lib/x86_64-linux-gnu/
+COPY --from=builder /tmp/libgomp.so.1 /usr/lib/x86_64-linux-gnu/
 
 USER nonroot
 

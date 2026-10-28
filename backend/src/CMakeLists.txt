@@ -3,10 +3,21 @@ add_library(backend_core STATIC)
 target_sources(
     backend_core
     PRIVATE
-    core.cpp
+    api/routes.cpp
+    common/config.cpp
+    common/rate_limiter.cpp
+    common/url.cpp
     graph_engine/leiden_wrapper.cpp
-    database/db_client.cpp
-    api/openalex_client.cpp
+    openalex/client.cpp
+    openalex/parser.cpp
+    repository/author_repository.cpp
+    repository/community_repository.cpp
+    repository/database.cpp
+    repository/graph_repository.cpp
+    repository/ingest_repository.cpp
+    repository/schema.cpp
+    service/ingest_service.cpp
+    service/query_service.cpp
 )
 
 target_include_directories(
@@ -15,25 +26,16 @@ target_include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
-target_include_directories(
-    backend_core
-    SYSTEM PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/graph_engine/3rdparty/gve_leiden/inc
-)
-
-find_package(fmt CONFIG REQUIRED)
-find_package(OpenMP REQUIRED)
-find_package(httplib CONFIG REQUIRED)
-
 target_link_libraries(
     backend_core
     PUBLIC
         fmt::fmt
+        spdlog::spdlog
         SOCI::SOCI
+        httplib::httplib
 
     PRIVATE
-        OpenMP::OpenMP_CXX
         CURL::libcurl
         nlohmann_json::nlohmann_json
-        httplib::httplib
+        gve_leiden
 )

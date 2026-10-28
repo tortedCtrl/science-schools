@@ -2,10 +2,11 @@
   "name": "backend-core",
   "version-string": "0.1.0",
   "dependencies": [
-    "fmt", 
-    "curl", 
+    "fmt",
+    "curl",
     "nlohmann-json",
     "cpp-httplib",
+    "spdlog",
     {
       "name": "soci",
       "features": [

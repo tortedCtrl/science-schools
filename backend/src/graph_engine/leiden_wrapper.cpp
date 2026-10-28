@@ -1,56 +1,55 @@
-#include "leiden_wrapper.hpp"
-#include "Graph.hxx"     
-#include "leiden.hxx"    
+#include "graph_engine/leiden_wrapper.hpp"
+
+#include <spdlog/spdlog.h>
+
+#include <Graph.hxx>
 #include <algorithm>
-#include <iostream>
-#include <omp.h> 
+#include <cstdint>
+#include <leiden.hxx>
+#include <span>
+#include <vector>
 
-std::vector<uint32_t> LeidenWrapper::run_leiden(const std::vector<CoauthorshipEdge>& input_edges, double gamma) {
-    if (input_edges.empty()) return {};
+namespace schools::graph {
 
-    uint32_t max_vertex_id = 0;
-    for (const auto& edge : input_edges) {
-        max_vertex_id = std::max({max_vertex_id, edge.source_id, edge.target_id});
-    }
-    uint32_t num_vertices = max_vertex_id + 1;
+std::vector<std::uint32_t> LeidenWrapper::RunLeiden(
+    std::span<const CoauthorshipEdge> input_edges, double gamma) {
+  if (input_edges.empty()) {
+    return {};
+  }
 
-    // 1. Создаем пустой граф, как это делает сам автор в main.cxx
-    DiGraph<uint32_t, None, float> g;
+  std::uint32_t max_vertex_id{0};
+  for (const CoauthorshipEdge& edge : input_edges) {
+    max_vertex_id = std::max({max_vertex_id, edge.source_id, edge.target_id});
+  }
+  const std::uint32_t num_vertices = max_vertex_id + 1;
 
-    // 2. Инициализируем вершины строго по порядку от 0 до N-1.
-    // Метод addVertex внутри библиотеки puzzlef проставит true в массив exists
-    // и выделит соответствующий LazyBitset в массиве edges.
-    for (uint32_t i = 0; i < num_vertices; ++i) {
-        g.addVertex(i);
-    }
+  // The library indexes vertices densely, so create every vertex up front.
+  DiGraph<std::uint32_t, None, float> graph;
+  for (std::uint32_t vertex = 0; vertex < num_vertices; ++vertex) {
+    graph.addVertex(vertex);
+  }
 
-    // 3. Добавляем ребра соавторства. 
-    // Поскольку у автора используется структура LazyBitset, мы добавляем 
-    // связи в обе стороны, чтобы алгоритм корректно считал граф ненаправленным.
-    for (const auto& edge : input_edges) {
-        g.addEdge(edge.source_id, edge.target_id, static_cast<float>(edge.weight));
-        g.addEdge(edge.target_id, edge.source_id, static_cast<float>(edge.weight));
-    }
+  // The graph is undirected; add both directions explicitly.
+  for (const CoauthorshipEdge& edge : input_edges) {
+    const auto weight = static_cast<float>(edge.weight);
+    graph.addEdge(edge.source_id, edge.target_id, weight);
+    graph.addEdge(edge.target_id, edge.source_id, weight);
+  }
+  graph.update();
 
-    g.update();
+  spdlog::debug("Leiden graph: {} vertices, {} edges", graph.order(),
+                graph.size());
 
-    std::cout << "[LeidenCore] Проверка графа внутри движка:" << std::endl;
-    std::cout << "  Вершин в графе (order): " << g.order() << std::endl;
-    std::cout << "  Ребер в графе (size): " << g.size() << std::endl;
-    // 4. Задаем опции Лейдена. 
-    // Передаем gamma (разрешение CPM) в структуру опций, которую мы нашли в leiden.hxx
-    LeidenOptions options;
-    options.resolution = gamma;
-    options.repeat = 1;
+  LeidenOptions options;
+  options.resolution = static_cast<float>(gamma);
+  options.repeat = 1;
 
-    // 5. Вызываем расчет через базовую функцию leidenStatic
-    auto result = leidenStatic(g, options); 
-
-    // 6. Собираем результаты членства в сообществах
-    std::vector<uint32_t> communities(num_vertices);
-    for (uint32_t i = 0; i < num_vertices; ++i) {
-        communities[i] = result.membership[i]; 
-    }
-
-    return communities;
+  const auto result = leidenStatic(graph, options);
+  std::vector<std::uint32_t> communities(num_vertices);
+  for (std::uint32_t vertex = 0; vertex < num_vertices; ++vertex) {
+    communities[vertex] = result.membership[vertex];
+  }
+  return communities;
 }
+
+}  // namespace schools::graph

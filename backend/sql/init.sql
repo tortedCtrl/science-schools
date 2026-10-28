@@ -2,7 +2,6 @@ CREATE TABLE authors (
     id INTEGER PRIMARY KEY,
     openalex_id VARCHAR(64) NOT NULL UNIQUE,
     name VARCHAR(512) NOT NULL,
-    community_id INTEGER DEFAULT NULL,
     institution_name VARCHAR(512)
 );
 
@@ -28,3 +27,11 @@ CREATE TABLE author_to_article (
 
     PRIMARY KEY (author_id, article_id)
 );
+
+CREATE TABLE author_communities (
+    author_id INTEGER PRIMARY KEY REFERENCES authors(id) ON DELETE CASCADE,
+    community_id INTEGER NOT NULL
+);
+
+CREATE INDEX author_communities_community_idx
+    ON author_communities (community_id);

@@ -1,15 +1,21 @@
 #pragma once
 
-#include <vector>
 #include <cstdint>
+#include <span>
+#include <vector>
+
+namespace schools::graph {
 
 struct CoauthorshipEdge {
-    uint32_t source_id;
-    uint32_t target_id;
-    int weight;
+  std::uint32_t source_id{0};
+  std::uint32_t target_id{0};
+  std::int32_t weight{0};
 };
 
 class LeidenWrapper {
-public:
-    static std::vector<uint32_t> run_leiden(const std::vector<CoauthorshipEdge>& input_edges, double gamma);
+ public:
+  static std::vector<std::uint32_t> RunLeiden(
+      std::span<const CoauthorshipEdge> input_edges, double gamma);
 };
+
+}  // namespace schools::graph

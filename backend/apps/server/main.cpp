@@ -1,86 +1,92 @@
-#include "database/db_client.hpp"
-#include "api/openalex_client.hpp"
-#include "graph_engine/leiden_wrapper.hpp"
+#include <httplib.h>
+#include <spdlog/spdlog.h>
 
-#include <cstdlib>
-#include <iostream>
-#include <stdexcept>
 #include <string>
 
-#include "nlohmann/json.hpp"
-#include <httplib.h>
-#include "routes.hpp"
+#include "api/routes.hpp"
+#include "common/config.hpp"
+#include "repository/author_repository.hpp"
+#include "repository/community_repository.hpp"
+#include "repository/database.hpp"
+#include "repository/graph_repository.hpp"
+#include "repository/ingest_repository.hpp"
+#include "repository/schema.hpp"
+#include "service/ingest_service.hpp"
+#include "service/query_service.hpp"
 
 namespace {
-std::string requiredEnvironmentValue(const char* name) {
-    const char* value = std::getenv(name);
-    if (value == nullptr || value[0] == '\0') {
-        throw std::runtime_error(std::string("Required environment variable is not set: ") + name);
-    }
-    return value;
+
+void SetCorsHeaders(httplib::Response& response) {
+  response.set_header("Access-Control-Allow-Methods", "GET, OPTIONS");
+  response.set_header("Access-Control-Allow-Headers", "Content-Type, Accept");
 }
 
-void setCorsHeaders(httplib::Response& res, const std::string& origin) {
-    res.set_header("Access-Control-Allow-Methods", "GET, OPTIONS");
-    res.set_header("Access-Control-Allow-Headers", "Content-Type, Accept");
-}
-}
+}  // namespace
 
 int main() {
-    try {
-        std::cout << "1. Creating DBClient..." << std::endl;
-        DBClient db(requiredEnvironmentValue("ConnectionStrings__DefaultConnection"));
-        db.clear_import_data();
-        // ===== ЗАГРУЗКА ДАННЫХ ИЗ OPENALEX =====
-        // Раскомментируйте, если нужно загрузить данные при старте.
-        // После первой загрузки лучше держать закомментированным,
-        // чтобы сервер стартовал мгновенно.
+  auto config = schools::Config::FromEnv();
+  if (!config) {
+    spdlog::error("Invalid configuration: {}", config.error().message);
+    return 2;
+  }
 
-        {
-            std::cout << "2. Loading data from OpenAlex..." << std::endl;
-            OpenAlexClient loader;
-            loader.loadDataBase(db, 500);
-            std::cout << "   Data loaded." << std::endl;
+  spdlog::set_level(spdlog::level::from_str(config->log_level));
+  spdlog::set_pattern("%Y-%m-%d %H:%M:%S.%e [%^%l%$] [t%t] %v");
+
+  spdlog::info("Connecting to PostgreSQL");
+  schools::repository::Database database;
+  auto opened = database.Open(config->db_connection, config->db_pool_size);
+  if (!opened) {
+    spdlog::error("{}", opened.error().message);
+    return 1;
+  }
+
+  auto schema = schools::repository::EnsureSchema(database);
+  if (!schema) {
+    spdlog::error("{}", schema.error().message);
+    return 1;
+  }
+
+  schools::repository::AuthorRepository author_repository(database);
+  schools::repository::GraphRepository graph_repository(database);
+  schools::service::QueryService query_service(author_repository,
+                                               graph_repository);
+
+  if (config->ingest_on_start) {
+    schools::repository::IngestRepository ingest_repository(database);
+    schools::repository::CommunityRepository community_repository(database);
+    schools::service::IngestService ingest_service(*config, ingest_repository,
+                                                   community_repository);
+    auto ingested = ingest_service.Run();
+    if (!ingested) {
+      spdlog::error("{}", ingested.error().message);
+      return 1;
+    }
+  } else {
+    spdlog::info("INGEST_ON_START=false: using existing database contents");
+  }
+
+  httplib::Server server;
+  schools::api::RegisterRoutes(server, query_service);
+
+  const std::string frontend_port = config->frontend_port;
+  server.set_post_routing_handler(
+      [frontend_port](const httplib::Request& request,
+                      httplib::Response& response) {
+        const std::string origin = request.get_header_value("Origin");
+        if (origin == "http://127.0.0.1:" + frontend_port ||
+            origin == "http://localhost:" + frontend_port) {
+          response.set_header("Access-Control-Allow-Origin", origin);
         }
+        SetCorsHeaders(response);
+      });
 
-        std::cout << "3. Calculating author communities..." << std::endl;
-        const auto edges = db.get_coauthorship_edges();
-        const auto communities = LeidenWrapper::run_leiden(edges, 1.25);
-        db.update_communities(communities);
-        std::cout << "   Communities saved: " << communities.size() << std::endl;
+  spdlog::info("Listening on {}:{}", config->backend_host,
+               config->backend_port);
+  if (!server.listen(config->backend_host, config->backend_port)) {
+    spdlog::error("Failed to start HTTP server");
+    return 1;
+  }
 
-        httplib::Server server;
-        register_routes(server, db);
-
-        server.set_post_routing_handler([](const httplib::Request& req, httplib::Response& res) {
-            std::string origin = req.get_header_value("Origin");
-            if (origin == "http://127.0.0.1:" + requiredEnvironmentValue("FRONTEND_PORT")
-                || origin == "http://localhost:" + requiredEnvironmentValue("FRONTEND_PORT")) {
-                res.set_header("Access-Control-Allow-Origin", origin);
-            }
-            setCorsHeaders(res, origin);
-            });
-
-        const std::string host = requiredEnvironmentValue("BACKEND_HOST");
-        const int port = std::stoi(requiredEnvironmentValue("BACKEND_PORT"));
-
-        std::cout << "DEBUG: Host is '" << host << "', Port is " << port << std::endl;
-
-        bool status = server.listen(host, port);
-        
-    }
-    catch (const soci::soci_error& e) {
-        std::cerr << "SOCI ERROR: " << e.what() << std::endl;
-        return 1;
-    }
-    catch (const nlohmann::json::exception& e) {
-        std::cerr << "JSON ERROR: " << e.what() << std::endl;
-        return 1;
-    }
-    catch (const std::exception& e) {
-        std::cerr << "ERROR: " << e.what() << std::endl;
-        return 1;
-    }
-
-    return 0;
+  return 0;
 }

@@ -49,12 +49,12 @@ int main() {
 
   schools::repository::AuthorRepository author_repository(database);
   schools::repository::GraphRepository graph_repository(database);
-  schools::service::QueryService query_service(author_repository,
-                                               graph_repository);
+  schools::repository::CommunityRepository community_repository(database);
+  schools::service::QueryService query_service(
+    author_repository, graph_repository, community_repository);
 
   if (config->ingest_on_start) {
     schools::repository::IngestRepository ingest_repository(database);
-    schools::repository::CommunityRepository community_repository(database);
     schools::service::IngestService ingest_service(*config, ingest_repository,
                                                    community_repository);
     auto ingested = ingest_service.Run();

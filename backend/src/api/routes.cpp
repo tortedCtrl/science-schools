@@ -100,6 +100,10 @@ void RegisterRoutes(httplib::Server& server, service::QueryService& query) {
              [&query](const httplib::Request&, httplib::Response& response) {
                SendBody(response, query.GetGraphJson());
              });
+  server.Get("/communities/bigclam", 
+            [&query](const httplib::Request&,  httplib::Response& response) {
+                SendBody(response, query.ListBigClamMembershipsJson());
+            });
 }
 
 }  // namespace schools::api

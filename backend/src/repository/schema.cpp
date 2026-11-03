@@ -45,6 +45,17 @@ constexpr auto kStatements = std::to_array<std::string_view>({
       )
     )sql",
     R"sql(
+      CREATE TABLE IF NOT EXISTS bigclam_memberships (
+        author_id INTEGER NOT NULL REFERENCES authors(id) ON DELETE CASCADE,
+        community_id INTEGER NOT NULL,
+        PRIMARY KEY (author_id, community_id)
+    )
+    )sql",
+    R"sql(
+      CREATE INDEX IF NOT EXISTS bigclam_memberships_community_idx
+        ON bigclam_memberships (community_id)
+    )sql",
+    R"sql(
       CREATE TABLE IF NOT EXISTS author_communities (
         author_id INTEGER PRIMARY KEY REFERENCES authors(id) ON DELETE CASCADE,
         community_id INTEGER NOT NULL

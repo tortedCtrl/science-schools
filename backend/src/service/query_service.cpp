@@ -131,4 +131,18 @@ Result<std::string> QueryService::GetGraphJson() {
   return result.dump();
 }
 
+Result<std::string> QueryService::ListBigClamMembershipsJson() {
+  auto memberships = communities_.ListBigClamMemberships();
+  if (!memberships) {
+    return std::unexpected(memberships.error());
+  }
+
+  Json result = Json::array();
+  for (const domain::Membership& membership : *memberships) {
+    result.push_back({{"author_id", membership.author_id},
+                      {"community_id", membership.community_id}});
+  }
+  return result.dump();
+}
+
 }  // namespace schools::service

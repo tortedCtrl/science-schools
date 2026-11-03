@@ -18,6 +18,8 @@ target_sources(
     repository/schema.cpp
     service/ingest_service.cpp
     service/query_service.cpp
+    graph_engine/bigclam_wrapper.cpp
+    graph_engine/leiden_wrapper.cpp
 )
 
 target_include_directories(

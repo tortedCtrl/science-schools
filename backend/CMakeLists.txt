@@ -65,3 +65,4 @@ endif()
 
 add_subdirectory(src)
 add_subdirectory(apps/server)
+add_subdirectory(bigclam)

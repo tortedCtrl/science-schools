@@ -14,7 +14,7 @@
 namespace schools::repository {
 
 Status CommunityRepository::ReplaceMemberships(
-    std::span<const domain::Membership> memberships) {
+  std::span<const domain::Membership> memberships) {
   auto session = database_.Acquire();
   if (!session) {
     return std::unexpected(session.error());
@@ -58,4 +58,65 @@ Status CommunityRepository::ReplaceMemberships(
   }
 }
 
+  Result<std::vector<domain::Membership>> CommunityRepository::ListBigClamMemberships() {
+    auto session = database_.Acquire();
+    if (!session) {
+      return std::unexpected(session.error());
+    }
+    soci::session& sql = **session;
+    try {
+      const soci::rowset<soci::row> rows = (sql.prepare<<"SELECT author_id, community_id "
+                        "FROM bigclam_memberships "
+                        "ORDER BY author_id, community_id");
+      std::vector<domain::Membership> memberships;
+      for (const soci::row& row: rows) {
+        memberships.push_back({.author_id = row.get<std::int32_t>(0),.community_id = row.get<std::int32_t>(1)});
+      }
+      return memberships;
+    } catch (const std::exception& error){
+      return MakeError(Errc::kDatabase, "list BigCLAM memberships: {}", error.what());
+    }
+}
+Status CommunityRepository::ReplaceBigClamMemberships(std::span<const domain::Membership> memberships){
+  auto session = database_.Acquire();
+  if (!session) {
+    return std::unexpected(session.error());
+  }
+
+  soci::session& sql = **session;
+  try {
+    soci::transaction transaction(sql);
+    sql << "DELETE FROM bigclam_memberships";
+
+    std::vector<std::int32_t> author_ids;
+    std::vector<std::int32_t> community_ids;
+    author_ids.reserve(memberships.size());
+    community_ids.reserve(memberships.size());
+    for (const auto& membership : memberships) {
+      author_ids.push_back(membership.author_id);
+      community_ids.push_back(membership.community_id);
+    }
+
+    for (std::size_t offset = 0; offset < author_ids.size();
+         offset += kBulkChunkSize) {
+      const std::size_t end =
+          std::min(offset + kBulkChunkSize, author_ids.size());
+      auto author_chunk = Slice(author_ids, offset, end);
+      auto community_chunk = Slice(community_ids, offset, end);
+      soci::statement statement =
+          (sql.prepare << "INSERT INTO bigclam_memberships "
+                          "(author_id, community_id) "
+                          "VALUES (:author_id, :community_id) "
+                          "ON CONFLICT DO NOTHING",
+           soci::use(author_chunk), soci::use(community_chunk));
+      statement.execute(true);
+    }
+
+    transaction.commit();
+    return {};
+  } catch (const std::exception& error) {
+    return MakeError(Errc::kDatabase, "save BigCLAM communities: {}",
+                     error.what());
+  }
+}
 }  // namespace schools::repository

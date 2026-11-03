@@ -35,3 +35,12 @@ CREATE TABLE author_communities (
 
 CREATE INDEX author_communities_community_idx
     ON author_communities (community_id);
+
+CREATE TABLE bigclam_memberships (
+    author_id INTEGER NOT NULL REFERENCES authors(id) ON DELETE CASCADE,
+    community_id INTEGER NOT NULL,
+    PRIMARY KEY (author_id, community_id)
+);
+
+CREATE INDEX bigclam_memberships_community_idx
+    ON bigclam_memberships (community_id);

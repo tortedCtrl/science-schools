@@ -19,6 +19,7 @@
 #include <vector>
 
 #include "graph_engine/leiden_wrapper.hpp"
+#include "service/community_topic_aggregator.hpp"
 
 namespace schools::service {
 namespace {
@@ -307,6 +308,7 @@ Result<domain::IngestResult> IngestService::Run() {
 
   std::vector<domain::Article> articles;
   std::vector<domain::AuthorArticle> links;
+  std::vector<domain::ArticleTopicInput> topic_inputs;
   for (const domain::Work& work : *works) {
     bool needed = false;
     for (const std::string& author_id : work.author_ids) {
@@ -319,16 +321,21 @@ Result<domain::IngestResult> IngestService::Run() {
       continue;
     }
 
-    articles.push_back(domain::Article{.openalex_id = work.openalex_id,
-                                       .title = work.title,
-                                       .year = work.year});
+    domain::Article article{.openalex_id = work.openalex_id,
+                            .title = work.title,
+                            .year = work.year,
+                            .topics = work.topics};
+    domain::ArticleTopicInput topic_input{.article = article};
     for (const std::string& author_id : work.author_ids) {
       const auto it = dense_ids.find(author_id);
       if (it != dense_ids.end()) {
         links.push_back(domain::AuthorArticle{.author_id = it->second,
                                               .article_id = work.openalex_id});
+        topic_input.author_ids.push_back(it->second);
       }
     }
+    articles.push_back(std::move(article));
+    topic_inputs.push_back(std::move(topic_input));
   }
 
   auto saved = repository_.SaveGraph(stored_authors, edges, articles, links);
@@ -340,7 +347,11 @@ Result<domain::IngestResult> IngestService::Run() {
   if (!memberships) {
     return std::unexpected(memberships.error());
   }
-  auto communities_saved = communities_.ReplaceMemberships(*memberships);
+  const std::vector<domain::CommunityTopic> community_topics =
+      ComputeCommunityTopics(*memberships, topic_inputs,
+                             domain::CommunityAlgorithm::kLeiden);
+  auto communities_saved =
+      communities_.ReplaceLeidenResults(*memberships, community_topics);
   if (!communities_saved) {
     return std::unexpected(communities_saved.error());
   }

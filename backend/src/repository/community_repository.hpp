@@ -1,6 +1,7 @@
 #pragma once
 
 #include <span>
+#include <string_view>
 #include <vector>
 
 #include "domain/models.hpp"
@@ -18,11 +19,14 @@ class CommunityRepository {
       std::span<const domain::Membership> memberships,
       std::span<const domain::CommunityTopic> topics);
 
-  Result<std::vector<domain::CommunityTopic>> ListTopCommunityTopics();
+  Result<std::vector<domain::CommunityTopic>> ListTopCommunityTopics(
+      std::string_view algorithm);
 
   Result<std::vector<domain::Membership>> ListBigClamMemberships();
 
-  Status ReplaceBigClamMemberships(std::span<const domain::Membership> memberships);
+  Status ReplaceBigClamResults(
+      std::span<const domain::Membership> memberships,
+      std::span<const domain::CommunityTopic> topics);
 
  private:
   Database& database_;

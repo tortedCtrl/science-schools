@@ -56,6 +56,11 @@ struct Article {
   std::vector<ArticleTopic> topics;
 };
 
+struct ArticleTopicInput {
+  Article article;
+  std::vector<std::int32_t> author_ids;
+};
+
 struct AuthorArticle {
   std::int32_t author_id{0};
   std::string article_id;
@@ -88,12 +93,15 @@ struct Membership {
 };
 
 struct CommunityTopic {
+  std::string algorithm;
   std::int32_t community_id{0};
   std::string topic_id;
   std::string topic_name;
   double weight{0.0};
   std::int32_t article_count{0};
 };
+
+enum class CommunityAlgorithm { kLeiden, kBigClam };
 
 struct IngestResult {
   std::size_t authors{0};

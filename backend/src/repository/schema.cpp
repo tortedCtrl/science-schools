@@ -84,17 +84,41 @@ constexpr auto kStatements = std::to_array<std::string_view>({
     )sql",
     R"sql(
       CREATE TABLE IF NOT EXISTS community_topics (
+        algorithm TEXT NOT NULL DEFAULT 'leiden',
         community_id INTEGER NOT NULL,
         topic_id TEXT NOT NULL,
         topic_name TEXT NOT NULL,
         weight DOUBLE PRECISION NOT NULL,
         article_count INTEGER NOT NULL,
-        PRIMARY KEY (community_id, topic_id)
+        PRIMARY KEY (algorithm, community_id, topic_id)
       )
     )sql",
     R"sql(
-      CREATE INDEX IF NOT EXISTS community_topics_weight_idx
-        ON community_topics (community_id, weight DESC)
+      ALTER TABLE community_topics
+        ADD COLUMN IF NOT EXISTS algorithm TEXT NOT NULL DEFAULT 'leiden'
+    )sql",
+    R"sql(
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_constraint
+          WHERE conrelid = 'community_topics'::regclass
+            AND contype = 'p'
+            AND pg_get_constraintdef(oid) =
+                'PRIMARY KEY (algorithm, community_id, topic_id)'
+        ) THEN
+          ALTER TABLE community_topics
+            DROP CONSTRAINT IF EXISTS community_topics_pkey;
+          ALTER TABLE community_topics
+            ADD CONSTRAINT community_topics_pkey
+            PRIMARY KEY (algorithm, community_id, topic_id);
+        END IF;
+      END;
+      $$
+    )sql",
+    R"sql(
+      CREATE INDEX IF NOT EXISTS community_topics_algorithm_weight_idx
+        ON community_topics (algorithm, community_id, weight DESC)
     )sql",
     R"sql(
       CREATE INDEX IF NOT EXISTS coauthorship_edges_target_idx

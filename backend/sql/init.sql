@@ -61,16 +61,17 @@ CREATE INDEX IF NOT EXISTS idx_article_topics_topic_id
     ON article_topics(topic_id);
 
 CREATE TABLE IF NOT EXISTS community_topics (
+    algorithm TEXT NOT NULL DEFAULT 'leiden',
     community_id INTEGER NOT NULL,
     topic_id TEXT NOT NULL,
     topic_name TEXT NOT NULL,
     weight DOUBLE PRECISION NOT NULL,
     article_count INTEGER NOT NULL,
-    PRIMARY KEY (community_id, topic_id)
+    PRIMARY KEY (algorithm, community_id, topic_id)
 );
 
-CREATE INDEX IF NOT EXISTS community_topics_weight_idx
-    ON community_topics (community_id, weight DESC);
+CREATE INDEX IF NOT EXISTS community_topics_algorithm_weight_idx
+    ON community_topics (algorithm, community_id, weight DESC);
 
 CREATE TABLE IF NOT EXISTS bigclam_memberships (
     author_id INTEGER NOT NULL REFERENCES authors(id) ON DELETE CASCADE,

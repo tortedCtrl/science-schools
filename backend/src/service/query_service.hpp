@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <string>
+#include <string_view>
 
 #include "common/error.hpp"
 #include "repository/author_repository.hpp"
@@ -24,7 +25,8 @@ class QueryService {
   Result<std::string> ListEdgesJson();
   Result<std::string> GetGraphJson();
   Result<std::string> ListBigClamMembershipsJson();
-  Result<std::string> ListCommunityTopicsJson();
+  Result<std::string> ListCommunityTopicsJson(
+      std::string_view algorithm = "leiden");
 
  private:
   repository::AuthorRepository& authors_;

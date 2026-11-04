@@ -17,6 +17,7 @@ target_sources(
     repository/ingest_repository.cpp
     repository/schema.cpp
     service/ingest_service.cpp
+    service/community_topic_aggregator.cpp
     service/query_service.cpp
     graph_engine/bigclam_wrapper.cpp
     graph_engine/leiden_wrapper.cpp

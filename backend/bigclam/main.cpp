@@ -12,6 +12,7 @@
 #include "repository/database.hpp"
 #include "repository/graph_repository.hpp"
 #include "repository/schema.hpp"
+#include "service/community_topic_aggregator.hpp"
 
 namespace {
 
@@ -95,8 +96,18 @@ int main(int argc, char** argv) {
     return 1;
   }
 
+  auto article_topic_inputs = graphs.GetArticleTopicInputs();
+  if (!article_topic_inputs) {
+    spdlog::error("{}", article_topic_inputs.error().message);
+    return 1;
+  }
+  const auto topics = schools::service::ComputeCommunityTopics(
+      *memberships, *article_topic_inputs,
+      schools::domain::CommunityAlgorithm::kBigClam);
+
   schools::repository::CommunityRepository repository(database);
-  if (auto saved = repository.ReplaceBigClamMemberships(*memberships); !saved) {
+  if (auto saved = repository.ReplaceBigClamResults(*memberships, topics);
+      !saved) {
     spdlog::error("{}", saved.error().message);
     return 1;
   }

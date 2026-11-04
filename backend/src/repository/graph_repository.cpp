@@ -4,8 +4,10 @@
 
 #include <cstdint>
 #include <exception>
+#include <map>
 #include <string>
 #include <string_view>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -103,6 +105,64 @@ Result<domain::GraphData> GraphRepository::GetGraph() {
     return graph;
   } catch (const std::exception& error) {
     return MakeError(Errc::kDatabase, "load graph: {}", error.what());
+  }
+}
+
+Result<std::vector<domain::ArticleTopicInput>>
+GraphRepository::GetArticleTopicInputs() {
+  auto session = database_.Acquire();
+  if (!session) {
+    return std::unexpected(session.error());
+  }
+
+  soci::session& sql = **session;
+  try {
+    const soci::rowset<soci::row> rows =
+        (sql.prepare << "SELECT art.id, art.title, COALESCE(art.year, 0), "
+                        "ata.author_id, topic.topic_id, topic.topic_name, "
+                        "topic.score "
+                        "FROM author_meta_articles art "
+                        "JOIN author_to_article ata ON ata.article_id = art.id "
+                        "JOIN article_topics topic ON topic.article_id = art.id "
+                        "ORDER BY art.id, ata.author_id, topic.topic_id");
+    std::map<std::string, domain::ArticleTopicInput> inputs_by_article;
+    std::map<std::string, std::unordered_set<std::int32_t>> authors_by_article;
+    std::map<std::string, std::unordered_set<std::string>> topics_by_article;
+
+    for (const soci::row& row : rows) {
+      const std::string article_id = row.get<std::string>(0);
+      auto [input_it, inserted] = inputs_by_article.try_emplace(article_id);
+      domain::ArticleTopicInput& input = input_it->second;
+      if (inserted) {
+        input.article.openalex_id = article_id;
+        input.article.title = row.get<std::string>(1);
+        input.article.year = row.get<std::int32_t>(2);
+      }
+
+      const std::int32_t author_id = row.get<std::int32_t>(3);
+      if (authors_by_article[article_id].insert(author_id).second) {
+        input.author_ids.push_back(author_id);
+      }
+
+      const std::string topic_id = row.get<std::string>(4);
+      if (topics_by_article[article_id].insert(topic_id).second) {
+        input.article.topics.push_back(
+            {.topic_id = topic_id,
+             .name = row.get<std::string>(5),
+             .score = row.get<double>(6)});
+      }
+    }
+
+    std::vector<domain::ArticleTopicInput> inputs;
+    inputs.reserve(inputs_by_article.size());
+    for (auto& [article_id, input] : inputs_by_article) {
+      (void)article_id;
+      inputs.push_back(std::move(input));
+    }
+    return inputs;
+  } catch (const std::exception& error) {
+    return MakeError(Errc::kDatabase, "load article topic inputs: {}",
+                     error.what());
   }
 }
 

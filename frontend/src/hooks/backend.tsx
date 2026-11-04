@@ -1,4 +1,18 @@
+import { useCallback } from 'react';
+
 import { api } from '../api';
+
+export type CommunityTopic = {
+    topic_id: string;
+    name: string;
+    weight: number;
+    article_count: number;
+};
+
+export type CommunityTopicsResponse = {
+    community_id: number;
+    topics: CommunityTopic[];
+};
 
 export type DatabaseResponse = {
     community_id: number | null;
@@ -51,4 +65,13 @@ export function useDatabase(): () => Promise<GraphResponse> {
         return { nodes, links };
     }
     return fetchData;
+}
+
+export function useCommunityTopics(): () => Promise<CommunityTopicsResponse[]> {
+    return useCallback(async () => {
+        const response = await api.get<CommunityTopicsResponse[]>(
+            '/communities/topics'
+        );
+        return response.data;
+    }, []);
 }

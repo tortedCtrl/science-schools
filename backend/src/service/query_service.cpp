@@ -145,8 +145,9 @@ Result<std::string> QueryService::ListBigClamMembershipsJson() {
   return result.dump();
 }
 
-Result<std::string> QueryService::ListCommunityTopicsJson() {
-  auto topics = communities_.ListTopCommunityTopics();
+Result<std::string> QueryService::ListCommunityTopicsJson(
+    std::string_view algorithm) {
+  auto topics = communities_.ListTopCommunityTopics(algorithm);
   if (!topics) {
     return std::unexpected(topics.error());
   }

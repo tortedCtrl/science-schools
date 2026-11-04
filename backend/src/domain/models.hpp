@@ -17,11 +17,30 @@ struct Author {
   std::string institution_name;
 };
 
+
+struct ArticleTopic {
+    std::string topic_id;
+    std::string name;
+    double score{0.0};
+
+    std::string subfield_id;
+    std::string subfield_name;
+
+    std::string field_id;
+    std::string field_name;
+
+    std::string domain_id;
+    std::string domain_name;
+
+    bool is_primary{false};
+};
+
 struct Work {
   std::string openalex_id;
   std::string title;
   std::int32_t year{0};
   std::vector<std::string> author_ids;
+  std::vector<ArticleTopic> topics;
 };
 
 struct Edge {
@@ -34,6 +53,7 @@ struct Article {
   std::string openalex_id;
   std::string title;
   std::int32_t year{0};
+  std::vector<ArticleTopic> topics;
 };
 
 struct AuthorArticle {

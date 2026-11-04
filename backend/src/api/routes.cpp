@@ -71,6 +71,10 @@ void RegisterRoutes(httplib::Server& server, service::QueryService& query) {
                  [](const httplib::Request&, httplib::Response& response) {
                    response.status = 204;
                  });
+  server.Options("/communities/topics",
+                 [](const httplib::Request&, httplib::Response& response) {
+                   response.status = 204;
+                 });
 
   server.Get("/authors",
              [&query](const httplib::Request&, httplib::Response& response) {
@@ -104,6 +108,10 @@ void RegisterRoutes(httplib::Server& server, service::QueryService& query) {
             [&query](const httplib::Request&,  httplib::Response& response) {
                 SendBody(response, query.ListBigClamMembershipsJson());
             });
+  server.Get("/communities/topics",
+             [&query](const httplib::Request&, httplib::Response& response) {
+               SendBody(response, query.ListCommunityTopicsJson());
+             });
 }
 
 }  // namespace schools::api

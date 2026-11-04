@@ -145,4 +145,27 @@ Result<std::string> QueryService::ListBigClamMembershipsJson() {
   return result.dump();
 }
 
+Result<std::string> QueryService::ListCommunityTopicsJson() {
+  auto topics = communities_.ListTopCommunityTopics();
+  if (!topics) {
+    return std::unexpected(topics.error());
+  }
+
+  Json result = Json::array();
+  for (const domain::CommunityTopic& topic : *topics) {
+    if (result.empty() ||
+        result.back()["community_id"].get<std::int32_t>() !=
+            topic.community_id) {
+      result.push_back({{"community_id", topic.community_id},
+                        {"topics", Json::array()}});
+    }
+    result.back()["topics"].push_back(
+        {{"topic_id", topic.topic_id},
+         {"name", topic.topic_name},
+         {"weight", topic.weight},
+         {"article_count", topic.article_count}});
+  }
+  return result.dump();
+}
+
 }  // namespace schools::service

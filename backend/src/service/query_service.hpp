@@ -24,6 +24,7 @@ class QueryService {
   Result<std::string> ListEdgesJson();
   Result<std::string> GetGraphJson();
   Result<std::string> ListBigClamMembershipsJson();
+  Result<std::string> ListCommunityTopicsJson();
 
  private:
   repository::AuthorRepository& authors_;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <span>
+#include <vector>
 
 #include "domain/models.hpp"
 #include "repository/database.hpp"
@@ -13,7 +14,11 @@ class CommunityRepository {
  public:
   explicit CommunityRepository(Database& database) : database_{database} {}
 
-  Status ReplaceMemberships(std::span<const domain::Membership> memberships);
+  Status ReplaceLeidenResults(
+      std::span<const domain::Membership> memberships,
+      std::span<const domain::CommunityTopic> topics);
+
+  Result<std::vector<domain::CommunityTopic>> ListTopCommunityTopics();
 
   Result<std::vector<domain::Membership>> ListBigClamMemberships();
 

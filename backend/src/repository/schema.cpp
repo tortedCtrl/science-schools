@@ -38,6 +38,27 @@ constexpr auto kStatements = std::to_array<std::string_view>({
       )
     )sql",
     R"sql(
+      CREATE TABLE IF NOT EXISTS article_topics (
+        article_id TEXT NOT NULL
+          REFERENCES author_meta_articles(id) ON DELETE CASCADE,
+        topic_id TEXT NOT NULL,
+        topic_name TEXT NOT NULL,
+        score DOUBLE PRECISION NOT NULL,
+        is_primary BOOLEAN NOT NULL DEFAULT FALSE,
+        subfield_id TEXT NOT NULL DEFAULT '',
+        subfield_name TEXT NOT NULL DEFAULT '',
+        field_id TEXT NOT NULL DEFAULT '',
+        field_name TEXT NOT NULL DEFAULT '',
+        domain_id TEXT NOT NULL DEFAULT '',
+        domain_name TEXT NOT NULL DEFAULT '',
+        PRIMARY KEY (article_id, topic_id)
+      )
+    )sql",
+    R"sql(
+      CREATE INDEX IF NOT EXISTS idx_article_topics_topic_id
+        ON article_topics (topic_id)
+    )sql",
+    R"sql(
       CREATE TABLE IF NOT EXISTS author_to_article (
         author_id INTEGER NOT NULL REFERENCES authors(id),
         article_id VARCHAR(64) NOT NULL REFERENCES author_meta_articles(id),
@@ -60,6 +81,20 @@ constexpr auto kStatements = std::to_array<std::string_view>({
         author_id INTEGER PRIMARY KEY REFERENCES authors(id) ON DELETE CASCADE,
         community_id INTEGER NOT NULL
       )
+    )sql",
+    R"sql(
+      CREATE TABLE IF NOT EXISTS community_topics (
+        community_id INTEGER NOT NULL,
+        topic_id TEXT NOT NULL,
+        topic_name TEXT NOT NULL,
+        weight DOUBLE PRECISION NOT NULL,
+        article_count INTEGER NOT NULL,
+        PRIMARY KEY (community_id, topic_id)
+      )
+    )sql",
+    R"sql(
+      CREATE INDEX IF NOT EXISTS community_topics_weight_idx
+        ON community_topics (community_id, weight DESC)
     )sql",
     R"sql(
       CREATE INDEX IF NOT EXISTS coauthorship_edges_target_idx

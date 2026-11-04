@@ -25,8 +25,87 @@ namespace {
 
 using EdgeKey = std::pair<std::string, std::string>;
 
+constexpr double kNonMemberMembership = 0.01;
+
 EdgeKey MakeEdgeKey(const std::string& first, const std::string& second) {
   return first < second ? EdgeKey{first, second} : EdgeKey{second, first};
+}
+
+std::vector<domain::CommunityTopic> ComputeCommunityTopics(
+    std::span<const domain::Membership> memberships,
+    std::span<const domain::Article> articles,
+    std::span<const domain::AuthorArticle> links) {
+  std::unordered_map<std::int32_t, std::int32_t> community_by_author;
+  community_by_author.reserve(memberships.size());
+  for (const domain::Membership& membership : memberships) {
+    community_by_author.emplace(membership.author_id, membership.community_id);
+  }
+
+  std::unordered_map<std::string, std::vector<std::int32_t>> authors_by_article;
+  authors_by_article.reserve(links.size());
+  for (const domain::AuthorArticle& link : links) {
+    authors_by_article[link.article_id].push_back(link.author_id);
+  }
+
+  struct Aggregate {
+    double weight{0.0};
+    std::int32_t article_count{0};
+    std::string topic_name;
+  };
+  std::map<std::pair<std::int32_t, std::string>, Aggregate> aggregates;
+
+  for (const domain::Article& article : articles) {
+    const auto article_authors = authors_by_article.find(article.openalex_id);
+    if (article_authors == authors_by_article.end()) {
+      continue;
+    }
+
+    std::unordered_set<std::int32_t> article_communities;
+    for (const std::int32_t author_id : article_authors->second) {
+      const auto membership = community_by_author.find(author_id);
+      if (membership != community_by_author.end()) {
+        article_communities.insert(membership->second);
+      }
+    }
+
+    std::unordered_set<std::string> seen_topics;
+    for (const domain::ArticleTopic& topic : article.topics) {
+      if (topic.topic_id.empty() || !seen_topics.insert(topic.topic_id).second) {
+        continue;
+      }
+
+      for (const std::int32_t community_id : article_communities) {
+        double article_membership = 1.0;
+        for (const std::int32_t author_id : article_authors->second) {
+          const auto membership = community_by_author.find(author_id);
+          if (membership == community_by_author.end() ||
+              membership->second != community_id) {
+            article_membership *= kNonMemberMembership;
+          }
+        }
+
+        auto [aggregate_it, inserted] = aggregates.try_emplace(
+            std::make_pair(community_id, topic.topic_id));
+        Aggregate& aggregate = aggregate_it->second;
+        if (inserted) {
+          aggregate.topic_name = topic.name;
+        }
+        aggregate.weight += article_membership * topic.score;
+        ++aggregate.article_count;
+      }
+    }
+  }
+
+  std::vector<domain::CommunityTopic> result;
+  result.reserve(aggregates.size());
+  for (const auto& [key, aggregate] : aggregates) {
+    result.push_back({.community_id = key.first,
+                      .topic_id = key.second,
+                      .topic_name = aggregate.topic_name,
+                      .weight = aggregate.weight,
+                      .article_count = aggregate.article_count});
+  }
+  return result;
 }
 
 Result<std::vector<domain::Membership>> ComputeMemberships(
@@ -341,7 +420,10 @@ Result<domain::IngestResult> IngestService::Run() {
   if (!memberships) {
     return std::unexpected(memberships.error());
   }
-  auto communities_saved = communities_.ReplaceMemberships(*memberships);
+  const std::vector<domain::CommunityTopic> community_topics =
+      ComputeCommunityTopics(*memberships, articles, links);
+  auto communities_saved =
+      communities_.ReplaceLeidenResults(*memberships, community_topics);
   if (!communities_saved) {
     return std::unexpected(communities_saved.error());
   }

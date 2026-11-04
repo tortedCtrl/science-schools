@@ -59,3 +59,11 @@ CREATE TABLE IF NOT EXISTS article_topics (
 
 CREATE INDEX IF NOT EXISTS idx_article_topics_topic_id
     ON article_topics(topic_id);
+CREATE TABLE IF NOT EXISTS bigclam_memberships (
+    author_id INTEGER NOT NULL REFERENCES authors(id) ON DELETE CASCADE,
+    community_id INTEGER NOT NULL,
+    PRIMARY KEY (author_id, community_id)
+);
+
+CREATE INDEX IF NOT EXISTS bigclam_memberships_community_idx
+    ON bigclam_memberships (community_id);

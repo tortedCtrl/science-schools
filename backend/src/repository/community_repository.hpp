@@ -15,6 +15,10 @@ class CommunityRepository {
 
   Status ReplaceMemberships(std::span<const domain::Membership> memberships);
 
+  Result<std::vector<domain::Membership>> ListBigClamMemberships();
+
+  Status ReplaceBigClamMemberships(std::span<const domain::Membership> memberships);
+
  private:
   Database& database_;
 };

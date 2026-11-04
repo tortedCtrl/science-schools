@@ -216,6 +216,7 @@ Status IngestRepository::ClearImportData() {
   soci::session& sql = **session;
   try {
     soci::transaction transaction(sql);
+    sql << "DELETE FROM bigclam_memberships";
     sql << "DELETE FROM author_communities";
     sql << "DELETE FROM author_to_article";
     sql << "DELETE FROM coauthorship_edges";

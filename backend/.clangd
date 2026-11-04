@@ -1,0 +1,8 @@
+CompileFlags:
+  CompilationDatabase: build
+  Remove:
+    - -fconcepts-diagnostics-depth=*
+    - -fdiagnostics-color=always
+    - -fno-omit-frame-pointer
+Index:
+  Background: Build

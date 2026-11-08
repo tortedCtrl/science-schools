@@ -321,7 +321,8 @@ Result<domain::IngestResult> IngestService::Run() {
 
     articles.push_back(domain::Article{.openalex_id = work.openalex_id,
                                        .title = work.title,
-                                       .year = work.year});
+                                       .year = work.year,
+                                      .topics = work.topics});
     for (const std::string& author_id : work.author_ids) {
       const auto it = dense_ids.find(author_id);
       if (it != dense_ids.end()) {

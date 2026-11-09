@@ -131,4 +131,42 @@ Result<std::string> QueryService::GetGraphJson() {
   return result.dump();
 }
 
+Result<std::string> QueryService::ListBigClamMembershipsJson() {
+  auto memberships = communities_.ListBigClamMemberships();
+  if (!memberships) {
+    return std::unexpected(memberships.error());
+  }
+
+  Json result = Json::array();
+  for (const domain::Membership& membership : *memberships) {
+    result.push_back({{"author_id", membership.author_id},
+                      {"community_id", membership.community_id}});
+  }
+  return result.dump();
+}
+
+Result<std::string> QueryService::ListCommunityTopicsJson(
+    std::string_view algorithm) {
+  auto topics = communities_.ListTopCommunityTopics(algorithm);
+  if (!topics) {
+    return std::unexpected(topics.error());
+  }
+
+  Json result = Json::array();
+  for (const domain::CommunityTopic& topic : *topics) {
+    if (result.empty() ||
+        result.back()["community_id"].get<std::int32_t>() !=
+            topic.community_id) {
+      result.push_back({{"community_id", topic.community_id},
+                        {"topics", Json::array()}});
+    }
+    result.back()["topics"].push_back(
+        {{"topic_id", topic.topic_id},
+         {"name", topic.topic_name},
+         {"weight", topic.weight},
+         {"article_count", topic.article_count}});
+  }
+  return result.dump();
+}
+
 }  // namespace schools::service

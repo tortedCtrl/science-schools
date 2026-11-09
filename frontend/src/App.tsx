@@ -1,6 +1,10 @@
 // src/App.tsx
 import React, { useState, useRef, useEffect } from 'react';
-import { useDatabase } from './hooks/backend';
+import {
+  useCommunityTopics,
+  useDatabase,
+  type CommunityTopicsResponse,
+} from './hooks/backend';
 import { SearchPanel, type ColorMode } from './components/SearchPanel';
 import { InfoPanel } from './components/InfoPanel';
 import { GraphView } from './components/GraphView';
@@ -9,6 +13,7 @@ import './App.css';
 
 export default function App() {
   const fetchData = useDatabase();
+  const fetchCommunityTopics = useCommunityTopics();
 
   const [searchName, setSearchName] = useState('');
   const [showAll, setShowAll] = useState(true);
@@ -20,6 +25,14 @@ export default function App() {
   const [showHiddenLinks, setShowHiddenLinks] = useState(false);
   const [colorMode, setColorMode] = useState<ColorMode>('type');
   const [highlightCluster, setHighlightCluster] = useState(false);
+  const [communityTopics, setCommunityTopics] = useState<
+    CommunityTopicsResponse[]
+  >([]);
+  const [communityTopicsLoading, setCommunityTopicsLoading] = useState(false);
+  const [communityTopicsError, setCommunityTopicsError] = useState<
+    string | null
+  >(null);
+  const communityTopicsRequestId = useRef(0);
 
   // Полный граф (последний ответ бэкенда)
   const [fullGraphData, setFullGraphData] = useState<{ nodes: any[]; links: any[] }>({
@@ -90,6 +103,33 @@ export default function App() {
     reloadGraph();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const toggleHighlightCluster = () => {
+    const enabled = !highlightCluster;
+    setHighlightCluster(enabled);
+    const requestId = ++communityTopicsRequestId.current;
+    if (!enabled) return;
+
+    setCommunityTopicsLoading(true);
+    setCommunityTopicsError(null);
+    fetchCommunityTopics()
+      .then((topics) => {
+        if (requestId === communityTopicsRequestId.current) {
+          setCommunityTopics(topics);
+        }
+      })
+      .catch((error: unknown) => {
+        console.error('Community topics API error:', error);
+        if (requestId === communityTopicsRequestId.current) {
+          setCommunityTopicsError('Не удалось загрузить темы научных школ.');
+        }
+      })
+      .finally(() => {
+        if (requestId === communityTopicsRequestId.current) {
+          setCommunityTopicsLoading(false);
+        }
+      });
+  };
 
   // Поиск: сначала тянем свежий граф, потом фильтруем
   const handleSearch = async (e?: React.FormEvent) => {
@@ -209,7 +249,7 @@ export default function App() {
         colorMode={colorMode}
         setColorMode={setColorMode}
         highlightCluster={highlightCluster}
-        onToggleHighlightCluster={() => setHighlightCluster(!highlightCluster)}
+        onToggleHighlightCluster={toggleHighlightCluster}
         leftOpen={leftOpen}
         onToggleLeft={() => setLeftOpen((v) => !v)}
       />
@@ -230,6 +270,10 @@ export default function App() {
         selectedNode={selectedNode}
         rightOpen={rightOpen}
         onToggleRight={() => setRightOpen((v) => !v)}
+        showCommunityTopics={highlightCluster}
+        communityTopics={communityTopics}
+        communityTopicsLoading={communityTopicsLoading}
+        communityTopicsError={communityTopicsError}
       />
     </div>
   );

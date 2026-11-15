@@ -1,466 +1,557 @@
 // src/App.tsx
-import React, { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect } from 'react';
 // @ts-ignore
 import ForceGraph2D from 'react-force-graph-2d';
-import { useDatabase } from './hooks/backend';
+// @ts-ignore
+import * as d3 from 'd3-force';
+import { useBclame } from './hooks/useBclame';
+import { useHierarchicalGraph } from './hooks/useHierarchicalGraph';
+import { TopicModal } from './components/TopicModal';
+import { drawCommunityHulls } from './components/CommunityHull';
+import { TOPICS } from './data/topics';
 import './App.css';
 
-export default function App() {
-  const fetchData = useDatabase();
+// 👇 Визуал: корень * 7
+const getVisualHullRadius = (memberCount: number) => {
+  return 50 + Math.sqrt(memberCount) * 7;
+};
 
-  const [searchName, setSearchName] = useState('');
-  const [showAll, setShowAll] = useState(true);
-  const [searchDepth, setSearchDepth] = useState(1);
-  const [vCap, setVCap] = useState<number | ''>(100);
+// 👇 Коллизия: чуть больше
+const getHullRadius = (memberCount: number) => {
+  return 60 + Math.sqrt(memberCount) * 7;
+};
+
+const getVisualRadius = (memberCount: number) => {
+  return Math.min(18, 12 + memberCount * 1.5);
+};
+
+const getCollapsedCollisionRadius = (memberCount: number) => {
+  return getVisualRadius(memberCount) * 1.5 + 20;
+};
+
+export default function App() {
+  const fetchMockData = useBclame();
+  const graphRef = useRef<any>(null);
+
+  const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // Состояния аналитических фич
-  const [showHiddenLinks, setShowHiddenLinks] = useState(false);
-  const [colorMode, setColorMode] = useState<'type' | 'geo'>('type');
-  const [highlightCluster, setHighlightCluster] = useState(false);
-
-  // Полный граф (последний ответ бэкенда)
-  const [fullGraphData, setFullGraphData] = useState<{ nodes: any[]; links: any[] }>({
-    nodes: [],
-    links: [],
-  });
-
-  // Отображаемый граф
-  const [graphData, setGraphData] = useState<{ nodes: any[]; links: any[] }>({
-    nodes: [],
-    links: [],
-  });
+  const [rawGraph, setRawGraph] = useState<{ nodes: any[]; links: any[] }>({ nodes: [], links: [] });
+  const [memberships, setMemberships] = useState<Map<string, number>>(new Map());
+  const [expandedCommunities, setExpandedCommunities] = useState<Set<number>>(new Set());
 
   const [selectedNode, setSelectedNode] = useState<any>(null);
-
-  // Открытость боковых шторок
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
 
-  // Размер вьюпорта для ForceGraph2D
   const viewportRef = useRef<HTMLDivElement>(null);
   const [viewportSize, setViewportSize] = useState({ w: 0, h: 0 });
 
-  // Подгонка размера графа под контейнер
+  // 1. Подгонка размера
   useEffect(() => {
     const el = viewportRef.current;
     if (!el) return;
-
     const update = () => {
       const r = el.getBoundingClientRect();
       setViewportSize({
         w: Math.max(1, Math.floor(r.width)),
-                      h: Math.max(1, Math.floor(r.height)),
+        h: Math.max(1, Math.floor(r.height)),
       });
     };
-
     const ro = new ResizeObserver(update);
     ro.observe(el);
     update();
     window.addEventListener('resize', update);
-
     return () => {
       ro.disconnect();
       window.removeEventListener('resize', update);
     };
-  }, []);
+  }, [selectedTopic]);
 
-  // Загрузка графа с бэкенда. Возвращает свежие данные.
-  const reloadGraph = async (): Promise<{ nodes: any[]; links: any[] }> => {
-    setLoading(true);
-    try {
-      const data = await fetchData();
-      const full = { nodes: data.nodes, links: data.links };
-      setFullGraphData(full);
-      setGraphData(full);
-      setSelectedNode(null);
-      return full;
-    } catch (e) {
-      console.error('API error:', e);
-      return { nodes: [], links: [] };
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Загрузка при старте
+  // 2. Загрузка данных
   useEffect(() => {
-    reloadGraph();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (!selectedTopic) return;
+
+    let isMounted = true;
+
+    async function load() {
+      setLoading(true);
+      try {
+        const { memberships: membershipsMap, projects: projectsData } = await fetchMockData();
+        if (!isMounted) return;
+        setMemberships(membershipsMap);
+
+        const nodes: any[] = [];
+        const links: any[] = [];
+
+        membershipsMap.forEach((cid, authorId) => {
+          nodes.push({
+            id: String(authorId),
+            name: `Автор ${authorId}`,
+            type: 'person',
+            location: 'RU',
+            info: `Ученый из сообщества #${cid}`,
+          });
+        });
+
+        projectsData.forEach(proj => {
+          const authors = proj.author_ids;
+          for (let i = 0; i < authors.length; i++) {
+            for (let j = i + 1; j < authors.length; j++) {
+              links.push({
+                source: authors[i],
+                target: authors[j],
+                isHidden: false,
+              });
+            }
+          }
+        });
+
+        const uniqueLinks = Array.from(
+          new Map(links.map(l => {
+            const s = l.source < l.target ? l.source : l.target;
+            const t = l.source < l.target ? l.target : l.source;
+            return [`${s}-${t}`, l];
+          })).values()
+        );
+
+        setRawGraph({ nodes, links: uniqueLinks });
+      } catch (e: any) {
+        console.error('Ошибка в load():', e);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    }
+
+    load();
+    return () => { isMounted = false; };
+  }, [selectedTopic]);
+
+  const displayGraph = useHierarchicalGraph(rawGraph, memberships, expandedCommunities);
+
+  // 3.1. Статические силы
+  useEffect(() => {
+    const graph = graphRef.current;
+    if (!graph) return;
+
+    graph.d3Force('charge').strength(-250);
+
+    graph.d3Force('link')
+      .distance((link: any) => {
+        if (link.isInvisible) {
+          const anchorId = typeof link.source === 'object' ? link.source.id : link.source;
+          const anchor = displayGraph.nodes.find((n: any) => n.id === anchorId);
+          const memberCount = anchor?.memberCount || 1;
+          const hullRadius = getHullRadius(memberCount);
+          return hullRadius * 0.7;
+        }
+        if (link.distance) return link.distance;
+        return 100;
+      })
+      .strength((link: any) => {
+        if (link.isInvisible) return 0.1; // ослабили притяжение к центру
+        return 0.4;
+      });
+
+    graph.d3Force(
+      'collision',
+      d3
+        .forceCollide((node: any) => {
+          if (node.isCommunity && !node.isAnchor) {
+            return getCollapsedCollisionRadius(node.memberCount || 0);
+          }
+          if (node.isAnchor) {
+            return getHullRadius(node.memberCount || 0) + 30;
+          }
+          return 0; // люди не отталкиваются глобально
+        })
+        .strength(1)
+        .iterations(3)
+    );
   }, []);
 
-  // Безопасное чтение ID связей (для обхода d3-объектов)
-  const getLinkId = (linkProp: any): string => {
-    if (!linkProp) return '';
-    if (typeof linkProp === 'object') return linkProp.id || '';
-    return String(linkProp);
-  };
+  // 3.2. Динамические силы
+  useEffect(() => {
+    const graph = graphRef.current;
+    if (!graph) return;
 
-  // Поиск: сначала тянем свежий граф, потом фильтруем
-  const handleSearch = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
+    graph.d3Force('hullBoundary', null);
+    graph.d3Force('hullRepulsion', null);
+    graph.d3Force('communityRepulsion', null);
+    graph.d3Force('peopleRepulsion', null);
+    graph.d3Force('keepPeopleInside', null); // 👈 новая сила
 
-    const full = await reloadGraph();
+    const nodes = displayGraph.nodes;
+    const anchors = nodes.filter((n: any) => n.isAnchor);
+    const collapsedCommunities = nodes.filter((n: any) => n.isCommunity && !n.isAnchor);
 
-    const baseLinks = showHiddenLinks
-    ? full.links
-    : full.links.filter((l: any) => !l.isHidden);
+    // 3.2.1. hullBoundary (не пускаем чужих внутрь hull)
+    if (anchors.length > 0) {
+      graph.d3Force('hullBoundary', (alpha: number) => {
+        nodes.forEach((node: any) => {
+          if (node.isAnchor) return;
+          const nodeCid = memberships.get(node.id);
+          if (nodeCid !== undefined && expandedCommunities.has(nodeCid)) return; // свои — пропускаем
 
-    if (showAll || !searchName.trim()) {
-      setGraphData({ nodes: full.nodes, links: baseLinks });
-      return;
+          anchors.forEach((anchor: any) => {
+            const dx = (node.x ?? 0) - (anchor.x ?? 0);
+            const dy = (node.y ?? 0) - (anchor.y ?? 0);
+            const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+            const hullRadius = getHullRadius(anchor.memberCount || 0);
+            const minDist = hullRadius + 30;
+
+            if (dist < minDist) {
+              const force = (minDist - dist) * alpha * 0.8;
+              node.vx = (node.vx ?? 0) + (dx / dist) * force;
+              node.vy = (node.vy ?? 0) + (dy / dist) * force;
+            }
+          });
+        });
+      });
     }
 
-    const targetNode = full.nodes.find(
-      (node: any) =>
-      node.name.toLowerCase().includes(searchName.toLowerCase()) ||
-      node.id === searchName
-    );
+    // 3.2.2. hullRepulsion (отталкиваем якоря)
+    if (anchors.length > 1) {
+      graph.d3Force('hullRepulsion', (alpha: number) => {
+        for (let i = 0; i < anchors.length; i++) {
+          for (let j = i + 1; j < anchors.length; j++) {
+            const a = anchors[i];
+            const b = anchors[j];
+            const dx = (a.x ?? 0) - (b.x ?? 0);
+            const dy = (a.y ?? 0) - (b.y ?? 0);
+            const dist = Math.sqrt(dx * dx + dy * dy) || 1;
 
-    if (!targetNode) {
-      setGraphData({ nodes: [], links: [] });
-      setSelectedNode(null);
-      return;
-    }
+            const radiusA = getHullRadius(a.memberCount || 0);
+            const radiusB = getHullRadius(b.memberCount || 0);
+            const minDist = radiusA + radiusB + 20;
 
-    setSelectedNode(targetNode);
+            if (dist < minDist) {
+              const overlap = (minDist - dist) / 2;
+              const force = overlap * alpha * 0.5;
+              const nx = dx / dist;
+              const ny = dy / dist;
 
-    const visitedNodeIds = new Set<string>([targetNode.id]);
-    let currentLayerIds = new Set<string>([targetNode.id]);
-
-    for (let depth = 0; depth < searchDepth; depth++) {
-      const nextLayerIds = new Set<string>();
-
-      baseLinks.forEach((link: any) => {
-        const s = getLinkId(link.source);
-        const t = getLinkId(link.target);
-
-        if (currentLayerIds.has(s) && !visitedNodeIds.has(t)) {
-          nextLayerIds.add(t);
-          visitedNodeIds.add(t);
-        }
-        if (currentLayerIds.has(t) && !visitedNodeIds.has(s)) {
-          nextLayerIds.add(s);
-          visitedNodeIds.add(s);
+              a.vx = (a.vx ?? 0) + nx * force;
+              a.vy = (a.vy ?? 0) + ny * force;
+              b.vx = (b.vx ?? 0) - nx * force;
+              b.vy = (b.vy ?? 0) - ny * force;
+            }
+          }
         }
       });
-
-      if (nextLayerIds.size === 0) break;
-      currentLayerIds = nextLayerIds;
     }
 
-    const filteredLinks = baseLinks.filter((link: any) => {
-      const s = getLinkId(link.source);
-      const t = getLinkId(link.target);
-      return visitedNodeIds.has(s) && visitedNodeIds.has(t);
-    });
+    // 3.2.3. communityRepulsion
+    const allCommunities = [...collapsedCommunities, ...anchors];
+    if (allCommunities.length > 1) {
+      graph.d3Force('communityRepulsion', (alpha: number) => {
+        for (let i = 0; i < allCommunities.length; i++) {
+          for (let j = i + 1; j < allCommunities.length; j++) {
+            const a = allCommunities[i];
+            const b = allCommunities[j];
+            const dx = (a.x ?? 0) - (b.x ?? 0);
+            const dy = (a.y ?? 0) - (b.y ?? 0);
+            const dist = Math.sqrt(dx * dx + dy * dy) || 1;
 
-    let filteredNodes = full.nodes.filter((node: any) =>
-    visitedNodeIds.has(node.id)
-    );
-    if (vCap !== '' && filteredNodes.length > vCap) {
-      filteredNodes = filteredNodes.slice(0, vCap);
+            const radiusA = a.isAnchor
+              ? getHullRadius(a.memberCount || 0) + 30
+              : getCollapsedCollisionRadius(a.memberCount || 0);
+            const radiusB = b.isAnchor
+              ? getHullRadius(b.memberCount || 0) + 30
+              : getCollapsedCollisionRadius(b.memberCount || 0);
+            const minDist = radiusA + radiusB + 20;
+
+            if (dist < minDist) {
+              const overlap = (minDist - dist) / 2;
+              const force = overlap * alpha * 0.5;
+              const nx = dx / dist;
+              const ny = dy / dist;
+
+              a.vx = (a.vx ?? 0) + nx * force;
+              a.vy = (a.vy ?? 0) + ny * force;
+              b.vx = (b.vx ?? 0) - nx * force;
+              b.vy = (b.vy ?? 0) - ny * force;
+            }
+          }
+        }
+      });
     }
 
-    setGraphData({ nodes: filteredNodes, links: filteredLinks });
-  };
+    // 3.2.4. peopleRepulsion (отталкиваем людей внутри одного сообщества)
+    if (anchors.length > 0) {
+      graph.d3Force('peopleRepulsion', (alpha: number) => {
+        const peopleByCommunity = new Map<number, any[]>();
+        nodes.forEach((node: any) => {
+          if (node.isCommunity) return;
+          const cid = memberships.get(node.id);
+          if (cid === undefined) return;
+          if (!expandedCommunities.has(cid)) return;
+          if (!peopleByCommunity.has(cid)) peopleByCommunity.set(cid, []);
+          peopleByCommunity.get(cid)!.push(node);
+        });
 
-  // Быстрое включение скрытых связей (локально, по текущему fullGraphData)
-  const toggleHiddenLinks = (checked: boolean) => {
-    setShowHiddenLinks(checked);
+        peopleByCommunity.forEach((people) => {
+          const minDist = 30;
+          for (let i = 0; i < people.length; i++) {
+            for (let j = i + 1; j < people.length; j++) {
+              const a = people[i];
+              const b = people[j];
+              const dx = (a.x ?? 0) - (b.x ?? 0);
+              const dy = (a.y ?? 0) - (b.y ?? 0);
+              const dist = Math.sqrt(dx * dx + dy * dy) || 1;
 
-    const baseLinks = checked
-    ? fullGraphData.links
-    : fullGraphData.links.filter((l: any) => !l.isHidden);
+              if (dist < minDist) {
+                const overlap = (minDist - dist) / 2;
+                const force = overlap * alpha * 0.5;
+                const nx = dx / dist;
+                const ny = dy / dist;
 
-    if (showAll || !searchName.trim()) {
-      setGraphData({ nodes: fullGraphData.nodes, links: baseLinks });
+                a.vx = (a.vx ?? 0) + nx * force;
+                a.vy = (a.vy ?? 0) + ny * force;
+                b.vx = (b.vx ?? 0) - nx * force;
+                b.vy = (b.vy ?? 0) - ny * force;
+              }
+            }
+          }
+        });
+      });
+    }
+
+    // 👇 3.2.5. keepPeopleInside: не даём людям выйти за пределы hull
+    if (anchors.length > 0) {
+      graph.d3Force('keepPeopleInside', (alpha: number) => {
+        anchors.forEach((anchor: any) => {
+          const cid = parseInt(anchor.id.split('-')[1], 10);
+          const people = nodes.filter((n: any) => {
+            const nodeCid = memberships.get(n.id);
+            return nodeCid === cid;
+          });
+          const hullRadius = getVisualHullRadius(people.length); // визуальный радиус (жёсткая граница)
+
+          people.forEach((person: any) => {
+            const dx = (person.x ?? 0) - (anchor.x ?? 0);
+            const dy = (person.y ?? 0) - (anchor.y ?? 0);
+            const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+
+            // Если человек вышел за пределы визуального hull, возвращаем его внутрь
+            if (dist > hullRadius - 10) { // -10, чтобы был запас от края
+              const force = (dist - (hullRadius - 10)) * alpha * 2.0; // сильная возвращающая сила
+              person.vx = (person.vx ?? 0) - (dx / dist) * force;
+              person.vy = (person.vy ?? 0) - (dy / dist) * force;
+            }
+          });
+        });
+      });
+    }
+  }, [expandedCommunities, memberships, displayGraph.nodes]);
+
+  const handleNodeClick = (node: any) => {
+    if (node.isCommunity) {
+      const cid = parseInt(node.id.split('-')[1], 10);
+      setExpandedCommunities(prev => {
+        const next = new Set(prev);
+        if (next.has(cid)) next.delete(cid);
+        else next.add(cid);
+        return next;
+      });
     } else {
-      const currentNodeIds = new Set(graphData.nodes.map((n: any) => n.id));
-      const filteredLinks = baseLinks.filter((link: any) => {
-        const s = getLinkId(link.source);
-        const t = getLinkId(link.target);
-        return currentNodeIds.has(s) && currentNodeIds.has(t);
-      });
-      setGraphData((prev) => ({ ...prev, links: filteredLinks }));
+      setSelectedNode(node);
+      setRightOpen(true);
     }
   };
 
-  // Галочка «Показать граф полностью» — тянем свежий граф с бэкенда
-  const handleShowAllChange = (checked: boolean) => {
-    setShowAll(checked);
+  const nodeCanvasObject = (node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
+    if (node.isAnchor) {
+      const posX = node.x ?? 0;
+      const posY = node.y ?? 0;
+      const radius = 8;
+      ctx.beginPath();
+      ctx.arc(posX, posY, radius, 0, 2 * Math.PI);
+      ctx.fillStyle = '#eb2f96';
+      ctx.fill();
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2 / globalScale;
+      ctx.stroke();
 
-    if (checked) {
-      setSearchName('');
-      reloadGraph();
+      ctx.fillStyle = '#fff';
+      ctx.font = `bold ${7 / globalScale}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('×', posX, posY);
+      return;
     }
+
+    const label = node.name || '';
+    const fontSize = Math.max(4, 12 / globalScale);
+    ctx.font = `${fontSize}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    const posX = node.x ?? 0;
+    const posY = node.y ?? 0;
+
+    if (node.isCommunity) {
+      const radius = getVisualRadius(node.memberCount || 0);
+      ctx.beginPath();
+      ctx.arc(posX, posY, radius, 0, 2 * Math.PI);
+      ctx.fillStyle = '#eb2f96';
+      ctx.fill();
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2 / globalScale;
+      ctx.stroke();
+
+      ctx.fillStyle = '#fff';
+      ctx.font = `bold ${fontSize * 0.9}px sans-serif`;
+      ctx.fillText(label, posX, posY - 2);
+
+      if (node.memberCount) {
+        ctx.font = `${fontSize * 0.7}px sans-serif`;
+        ctx.fillText(`(${node.memberCount})`, posX, posY + 8 / globalScale);
+      }
+      return;
+    }
+
+    ctx.beginPath();
+    ctx.arc(posX, posY, 6, 0, 2 * Math.PI);
+    ctx.fillStyle = '#1890ff';
+    ctx.fill();
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1.5 / globalScale;
+    ctx.stroke();
+
+    ctx.fillStyle = '#fff';
+    ctx.fillText(label, posX, posY + 12 / globalScale);
   };
+
+  const nodePointerAreaPaint = (node: any, color: string, ctx: CanvasRenderingContext2D, globalScale: number) => {
+    ctx.fillStyle = color;
+    const posX = node.x ?? 0;
+    const posY = node.y ?? 0;
+
+    if (node.isAnchor) {
+      ctx.beginPath();
+      ctx.arc(posX, posY, 8, 0, 2 * Math.PI);
+      ctx.fill();
+      return;
+    }
+
+    if (node.isCommunity) {
+      const radius = getVisualRadius(node.memberCount || 0);
+      ctx.beginPath();
+      ctx.arc(posX, posY, radius, 0, 2 * Math.PI);
+      ctx.fill();
+      return;
+    }
+
+    ctx.beginPath();
+    ctx.arc(posX, posY, 8, 0, 2 * Math.PI);
+    ctx.fill();
+  };
+
+  if (!selectedTopic) {
+    return <TopicModal onSelect={setSelectedTopic} />;
+  }
+
+  const currentTopic = TOPICS.find(t => t.id === selectedTopic);
 
   return (
     <div className="app-container">
-    {/* ============== ЛЕВАЯ ШТОРКА (Поиск) ============== */}
-    <aside className={`sidebar search-panel ${leftOpen ? 'open' : 'closed'}`}>
-    <button
-    type="button"
-    className="sidebar-handle"
-    onClick={() => setLeftOpen((v) => !v)}
-    title={leftOpen ? 'Свернуть поиск' : 'Развернуть поиск'}
-    aria-label={leftOpen ? 'Свернуть поиск' : 'Развернуть поиск'}
-    >
-    <svg
-    className="handle-icon"
-    viewBox="0 0 24 24"
-    width="20"
-    height="20"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    >
-    <circle cx="11" cy="11" r="7" />
-    <line x1="21" y1="21" x2="16.65" y2="16.65" />
-    </svg>
-    </button>
+      <aside className={`sidebar search-panel ${leftOpen ? 'open' : 'closed'}`}>
+        <button className="sidebar-handle" onClick={() => setLeftOpen(v => !v)}>
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="11" cy="11" r="7" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+        </button>
 
-    <div className="sidebar-content">
-    <h2>Поиск и Аналитика</h2>
-    <form onSubmit={handleSearch}>
-    <div className="form-group">
-    <label>Имя или ID объекта:</label>
-    <input
-    type="text"
-    value={searchName}
-    disabled={showAll}
-    onChange={(e) => setSearchName(e.target.value)}
-    placeholder={
-      showAll
-      ? 'Снимите галочку для поиска...'
-      : 'Например, Кузнецова...'
-    }
-    />
+        <div className="sidebar-content">
+          <h2>Тема: {currentTopic?.name}</h2>
+          <button
+            className="btn-toggle"
+            onClick={() => { setSelectedTopic(null); setExpandedCommunities(new Set()); }}
+            style={{ marginBottom: '20px', width: '100%' }}
+          >
+            Сменить тему
+          </button>
+
+          <div className="analysis-actions-block">
+            <h3>Сообщества</h3>
+            <p style={{ fontSize: '12px', color: '#888' }}>
+              Кликните на сообщество, чтобы развернуть. Клик по центру «×» — свернуть обратно.
+            </p>
+          </div>
+        </div>
+      </aside>
+
+      <main className="graph-viewport" ref={viewportRef}>
+        {loading && (
+          <div className="loading-overlay">
+            <span>Загрузка сообществ...</span>
+          </div>
+        )}
+
+        {viewportSize.w > 0 && viewportSize.h > 0 && (
+          <ForceGraph2D
+            ref={graphRef}
+            graphData={displayGraph}
+            width={viewportSize.w}
+            height={viewportSize.h}
+            nodeCanvasObject={nodeCanvasObject}
+            nodePointerAreaPaint={nodePointerAreaPaint}
+            linkColor={(link: any) => {
+              if (link.isInvisible) return 'rgba(0,0,0,0)';
+              return link.isHidden ? '#ff4d4f' : 'rgba(255,255,255,0.3)';
+            }}
+            linkWidth={(link: any) => {
+              if (link.isInvisible) return 0;
+              return link.isHidden ? 2 : 1;
+            }}
+            linkDirectionalParticles={(link: any) => (link.isHidden ? 3 : 0)}
+            onNodeClick={handleNodeClick}
+            cooldownTicks={200}
+            warmupTicks={100}
+            onRenderFramePost={(ctx) => {
+              drawCommunityHulls({
+                ctx,
+                nodes: displayGraph.nodes,
+                expandedCommunities,
+                getRadius: getVisualHullRadius,
+              });
+            }}
+          />
+        )}
+      </main>
+
+      <aside className={`sidebar info-panel ${rightOpen ? 'open' : 'closed'}`}>
+        <button className="sidebar-handle" onClick={() => setRightOpen(v => !v)}>
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="12" cy="12" r="9" />
+            <line x1="12" y1="11" x2="12" y2="16" />
+            <circle cx="12" cy="8" r="0.6" fill="currentColor" />
+          </svg>
+        </button>
+
+        <div className="sidebar-content">
+          <h2>Информация</h2>
+          {selectedNode ? (
+            <div className="node-details">
+              <h3>{selectedNode.name}</h3>
+              <p><strong>ID:</strong> {selectedNode.id}</p>
+              {selectedNode.type !== 'community' && (
+                <>
+                  <p><strong>Тип:</strong> Ученый</p>
+                  <hr />
+                  <p>{selectedNode.info}</p>
+                </>
+              )}
+            </div>
+          ) : (
+            <p className="placeholder-text">
+              Кликните на узел, чтобы увидеть информацию.
+            </p>
+          )}
+        </div>
+      </aside>
     </div>
-
-    <div className="form-group checkbox">
-    <label>
-    <input
-    type="checkbox"
-    checked={showAll}
-    onChange={(e) => handleShowAllChange(e.target.checked)}
-    />
-    Показать граф полностью
-    </label>
-    </div>
-
-    <div className="form-group">
-    <label>Глубина поиска (слои): {searchDepth}</label>
-    <input
-    type="range"
-    min="1"
-    max="3"
-    value={searchDepth}
-    disabled={showAll}
-    onChange={(e) => setSearchDepth(Number(e.target.value))}
-    />
-    </div>
-
-    <div className="form-group">
-    <label>Макс. вершин (V_cap):</label>
-    <input
-    type="number"
-    value={vCap}
-    onChange={(e) =>
-      setVCap(e.target.value === '' ? '' : Number(e.target.value))
-    }
-    placeholder="Без ограничений"
-    />
-    </div>
-
-    <button
-    type="submit"
-    className="btn-submit"
-    disabled={loading}
-    >
-    {loading ? 'Загрузка...' : 'Рассчитать граф'}
-    </button>
-    </form>
-
-    <div className="analysis-actions-block">
-    <h3>Модули восстановления РФ-связей</h3>
-
-    <div className="form-group checkbox">
-    <label className="toggle-label">
-    <input
-    type="checkbox"
-    checked={showHiddenLinks}
-    onChange={(e) => toggleHiddenLinks(e.target.checked)}
-    />
-    <span className="badge-alert">NEW</span> Подсветить скрытые связи
-    за рубежом
-    </label>
-    </div>
-
-    <div className="form-group">
-    <label>Режим раскраски графа:</label>
-    <div className="radio-group">
-    <button
-    type="button"
-    className={`btn-toggle ${
-      colorMode === 'type' ? 'active' : ''
-    }`}
-    onClick={() => setColorMode('type')}
-    >
-    Тип (Человек/Проект)
-    </button>
-    <button
-    type="button"
-    className={`btn-toggle ${
-      colorMode === 'geo' ? 'active' : ''
-    }`}
-    onClick={() => setColorMode('geo')}
-    >
-    Гео-след (РФ / Зарубеж)
-    </button>
-    </div>
-    </div>
-
-    <button
-    type="button"
-    className={`btn-analytics ${
-      highlightCluster ? 'active' : ''
-    }`}
-    onClick={() => setHighlightCluster(!highlightCluster)}
-    >
-    {highlightCluster
-      ? '⚡ Сбросить кластеры'
-  : '🔍 Найти научные школы (СВК)'}
-  </button>
-  </div>
-
-  <div className="analytics-notice">
-  <small>
-  Система деанонимизации скрытых связей работает в тестовом режиме
-  моков.
-  </small>
-  </div>
-  </div>
-  </aside>
-
-  {/* ============== ЦЕНТР: ГРАФ ============== */}
-  <main className="graph-viewport" ref={viewportRef}>
-  {viewportSize.w > 0 && viewportSize.h > 0 && (
-    <ForceGraph2D
-    graphData={graphData}
-    width={viewportSize.w}
-    height={viewportSize.h}
-    linkColor={(link: any) => (link.isHidden ? '#ff4d4f' : '#ffffff')}
-    linkWidth={(link: any) => (link.isHidden ? 3 : 2)}
-    linkCurvature={(link: any) => (link.isHidden ? 0.3 : 0)}
-    nodeCanvasObject={(
-      node: any,
-      ctx: CanvasRenderingContext2D,
-      globalScale: number
-    ) => {
-      const label = node.name || '';
-      const fontSize = Math.max(4, 13 / globalScale);
-      ctx.font = `bold ${fontSize}px sans-serif`;
-
-      const posX = node.x ?? 0;
-      const posY = node.y ?? 0;
-
-      ctx.beginPath();
-      ctx.arc(posX, posY, 8, 0, 2 * Math.PI, false);
-
-      if (highlightCluster) {
-        ctx.fillStyle = ['1', '2', '3', '12'].includes(node.id)
-        ? '#faad14'
-        : '#555555';
-      } else if (colorMode === 'geo') {
-        ctx.fillStyle =
-        node.location === 'INT' ? '#ff4d4f' : '#1890ff';
-      } else {
-        ctx.fillStyle = node.type === 'project' ? '#52c41a' : '#1890ff';
-      }
-
-      ctx.fill();
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 1.5 / globalScale;
-      ctx.stroke();
-
-      ctx.fillStyle = '#ffffff';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'top';
-      ctx.fillText(label, posX, posY + 12);
-    }}
-    onNodeClick={(node: any) => {
-      setSelectedNode(node);
-      setRightOpen(true);
-    }}
-    linkDirectionalParticles={(link: any) => (link.isHidden ? 5 : 2)}
-    linkDirectionalParticleSpeed={0.007}
-    />
-  )}
-  </main>
-
-  {/* ============== ПРАВАЯ ШТОРКА (Информация) ============== */}
-  <aside className={`sidebar info-panel ${rightOpen ? 'open' : 'closed'}`}>
-  <button
-  type="button"
-  className="sidebar-handle"
-  onClick={() => setRightOpen((v) => !v)}
-  title={rightOpen ? 'Свернуть информацию' : 'Развернуть информацию'}
-  aria-label={
-    rightOpen ? 'Свернуть информацию' : 'Развернуть информацию'
-  }
-  >
-  <svg
-  className="handle-icon"
-  viewBox="0 0 24 24"
-  width="20"
-  height="20"
-  fill="none"
-  stroke="currentColor"
-  strokeWidth="2"
-  strokeLinecap="round"
-  strokeLinejoin="round"
-  >
-  <circle cx="12" cy="12" r="9" />
-  <line x1="12" y1="11" x2="12" y2="16" />
-  <circle cx="12" cy="8" r="0.6" fill="currentColor" stroke="none" />
-  </svg>
-  </button>
-
-  <div className="sidebar-content">
-  <h2>Информация (Show_info)</h2>
-  {selectedNode ? (
-    <div className="node-details">
-    <h3>{selectedNode.name}</h3>
-    <p>
-    <strong>ID:</strong> {selectedNode.id}
-    </p>
-    <p>
-    <strong>Регион публикаций:</strong>{' '}
-    {selectedNode.location === 'RU'
-      ? '🇷🇺 Россия'
-  : '🌐 Международный / Скрытый'}
-  </p>
-  <p>
-  <strong>Категория:</strong>{' '}
-  {selectedNode.type === 'project'
-    ? 'Организация / Проект'
-  : 'Ученый / Сотрудник'}
-  </p>
-  <hr />
-  <p style={{ lineHeight: '1.5' }}>{selectedNode.info}</p>
-  </div>
-  ) : (
-    <p className="placeholder-text">
-    Кликните на объект, чтобы изучить восстановленные бэкендом
-    атрибуты и скрытые аффилиации.
-    </p>
-  )}
-  </div>
-  </aside>
-  </div>
   );
 }

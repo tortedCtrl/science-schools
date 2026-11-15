@@ -106,8 +106,8 @@ int main(int argc, char** argv) {
       schools::domain::CommunityAlgorithm::kBigClam);
 
   schools::repository::CommunityRepository repository(database);
-  if (auto saved = repository.ReplaceBigClamResults(*memberships, topics);
-      !saved) {
+  auto saved = repository.SaveBigClamResults(*memberships, topics);
+  if (!saved) {
     spdlog::error("{}", saved.error().message);
     return 1;
   }
@@ -117,7 +117,9 @@ int main(int argc, char** argv) {
     unique_authors.insert(membership.author_id);
     unique_communities.insert(membership.community_id);
   }
-  spdlog::info("BigCLAM saved: {} memberships, {} authors, {} communities",
+  spdlog::info("BigCLAM run {} saved: {} memberships, {} authors, {} "
+               "communities",
+               *saved,
                memberships->size(), unique_authors.size(),
                unique_communities.size());
   return 0;

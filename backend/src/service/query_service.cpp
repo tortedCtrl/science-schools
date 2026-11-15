@@ -139,7 +139,8 @@ Result<std::string> QueryService::ListBigClamMembershipsJson() {
 
   Json result = Json::array();
   for (const domain::Membership& membership : *memberships) {
-    result.push_back({{"author_id", membership.author_id},
+    result.push_back({{"run_id", membership.run_id},
+                      {"author_id", membership.author_id},
                       {"community_id", membership.community_id}});
   }
   return result.dump();
@@ -157,7 +158,8 @@ Result<std::string> QueryService::ListCommunityTopicsJson(
     if (result.empty() ||
         result.back()["community_id"].get<std::int32_t>() !=
             topic.community_id) {
-      result.push_back({{"community_id", topic.community_id},
+      result.push_back({{"run_id", topic.run_id},
+                        {"community_id", topic.community_id},
                         {"topics", Json::array()}});
     }
     result.back()["topics"].push_back(

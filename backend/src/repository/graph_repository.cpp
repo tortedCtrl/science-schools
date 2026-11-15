@@ -84,7 +84,10 @@ Result<domain::GraphData> GraphRepository::GetGraph() {
       SELECT a.id, a.name, ac.community_id, a.institution_name,
              COALESCE(wd.weighted_degree, 0)
       FROM authors a
-      LEFT JOIN author_communities ac ON ac.author_id = a.id
+      LEFT JOIN author_communities ac
+        ON ac.author_id = a.id
+       AND ac.run_id = (SELECT MAX(id) FROM clustering_runs
+                        WHERE algorithm = 'leiden')
       LEFT JOIN weighted_degrees wd ON wd.author_id = a.id
       ORDER BY a.id
     )sql";

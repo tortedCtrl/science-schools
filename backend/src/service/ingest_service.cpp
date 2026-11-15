@@ -351,7 +351,7 @@ Result<domain::IngestResult> IngestService::Run() {
       ComputeCommunityTopics(*memberships, topic_inputs,
                              domain::CommunityAlgorithm::kLeiden);
   auto communities_saved =
-      communities_.ReplaceLeidenResults(*memberships, community_topics);
+      communities_.SaveLeidenResults(*memberships, community_topics);
   if (!communities_saved) {
     return std::unexpected(communities_saved.error());
   }
@@ -363,7 +363,9 @@ Result<domain::IngestResult> IngestService::Run() {
   result.articles = articles.size();
   result.communities = memberships->size();
   spdlog::info(
-      "Ingest: saved {} authors, {} edges, {} articles, {} communities",
+      "Ingest: saved Leiden run {}, {} authors, {} edges, {} articles, "
+      "{} memberships",
+      *communities_saved,
       result.authors, result.edges, result.articles, result.communities);
   return result;
 }

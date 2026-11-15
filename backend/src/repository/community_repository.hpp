@@ -9,13 +9,11 @@
 
 namespace schools::repository {
 
-// Stores the output of the Leiden run separately from author rows. The
-// clustering algorithm owns this table; author data remains in `authors`.
 class CommunityRepository {
  public:
   explicit CommunityRepository(Database& database) : database_{database} {}
 
-  Status ReplaceLeidenResults(
+  Result<std::int64_t> SaveLeidenResults(
       std::span<const domain::Membership> memberships,
       std::span<const domain::CommunityTopic> topics);
 
@@ -24,7 +22,7 @@ class CommunityRepository {
 
   Result<std::vector<domain::Membership>> ListBigClamMemberships();
 
-  Status ReplaceBigClamResults(
+  Result<std::int64_t> SaveBigClamResults(
       std::span<const domain::Membership> memberships,
       std::span<const domain::CommunityTopic> topics);
 

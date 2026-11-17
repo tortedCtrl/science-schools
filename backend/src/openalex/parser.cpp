@@ -44,18 +44,24 @@ domain::ArticleTopic ParseTopic(const Json& item,
   topic.is_primary = is_primary;
 
   if (item.contains("subfield") && item["subfield"].is_object()) {
-    topic.subfield_id = GetString(item["subfield"], "id");
-    topic.subfield_name = GetString(item["subfield"], "display_name");
+    topic.subfield = {
+        .id = GetString(item["subfield"], "id"),
+        .name = GetString(item["subfield"], "display_name")
+    };
   }
 
   if (item.contains("field") && item["field"].is_object()) {
-    topic.field_id = GetString(item["field"], "id");
-    topic.field_name = GetString(item["field"], "display_name");
+    topic.field = {
+        .id = GetString(item["field"], "id"),
+        .name = GetString(item["field"], "display_name")
+    };
   }
 
   if (item.contains("domain") && item["domain"].is_object()) {
-    topic.domain_id = GetString(item["domain"], "id");
-    topic.domain_name = GetString(item["domain"], "display_name");
+    topic.domain = {
+        .id = GetString(item["domain"], "id"),
+        .name = GetString(item["domain"], "display_name")
+    };
   }
 
   return topic;

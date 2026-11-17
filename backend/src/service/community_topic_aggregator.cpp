@@ -83,7 +83,7 @@ std::vector<domain::CommunityTopic> ComputeCommunityTopics(
   std::vector<domain::CommunityTopic> result;
   result.reserve(aggregates.size());
   for (const auto& [key, aggregate] : aggregates) {
-    result.push_back({.algorithm = AlgorithmName(algorithm),
+    result.push_back({.algorithm = algorithm,
                       .community_id = key.first,
                       .topic_id = key.second,
                       .topic_name = aggregate.topic_name,

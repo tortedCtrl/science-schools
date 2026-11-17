@@ -153,9 +153,13 @@ CommunityRepository::ListTopCommunityTopics(std::string_view algorithm) {
                         "ORDER BY community_id, topic_rank",
          soci::use(algorithm_name));
     std::vector<domain::CommunityTopic> topics;
+    const auto algorithm =
+      algorithm_name == "bigclam"
+          ? domain::CommunityAlgorithm::kBigClam
+          : domain::CommunityAlgorithm::kLeiden;
     for (const soci::row& row : rows) {
       topics.push_back({.run_id = row.get<std::int64_t>(0),
-                        .algorithm = algorithm_name,
+                        .algorithm = algorithm,
                         .community_id = row.get<std::int32_t>(1),
                         .topic_id = row.get<std::string>(2),
                         .topic_name = row.get<std::string>(3),

@@ -158,12 +158,12 @@ void InsertArticleTopics(
       topic_names.push_back(topic.name);
       scores.push_back(topic.score);
       is_primary.push_back(topic.is_primary ? 1 : 0);
-      subfield_ids.push_back(topic.subfield_id);
-      subfield_names.push_back(topic.subfield_name);
-      field_ids.push_back(topic.field_id);
-      field_names.push_back(topic.field_name);
-      domain_ids.push_back(topic.domain_id);
-      domain_names.push_back(topic.domain_name);
+      subfield_ids.push_back(topic.subfield.id);
+      subfield_names.push_back(topic.subfield.name);
+      field_ids.push_back(topic.field.id);
+      field_names.push_back(topic.field.name);
+      domain_ids.push_back(topic.domain.id);
+      domain_names.push_back(topic.domain.name);
     }
   }
 

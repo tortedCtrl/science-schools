@@ -10,7 +10,10 @@ import { useHierarchicalGraph } from './hooks/useHierarchicalGraph';
 import { SearchPanel, type AlgorithmMode, type ColorMode } from './components/SearchPanel';
 import { InfoPanel } from './components/InfoPanel';
 import { GraphView } from './components/GraphView';
-import { drawCommunityHulls } from './components/CommunityHull';
+import {
+  drawCommunityHulls,
+  getCommunityHullBounds,
+} from './components/CommunityHull';
 import { getLinkId } from './utils/graph';
 import './App.css';
 
@@ -31,7 +34,7 @@ export default function App() {
   const fetchBigClamData = useBclame();
 
   const [algorithmMode, setAlgorithmMode] =
-    useState<AlgorithmMode>('bigclam');
+    useState<AlgorithmMode>('leiden');
   const fetchCommunityTopics = useCommunityTopics(algorithmMode);
 
   const [searchName, setSearchName] = useState('');
@@ -234,33 +237,11 @@ export default function App() {
   const toggleHighlightCluster = () => {
     const enabled = !highlightCluster;
     setHighlightCluster(enabled);
-    const requestId = ++communityTopicsRequestId.current;
 
     if (!enabled) {
       setCommunityTopicsLoading(false);
       setCommunityTopicsError(null);
-      return;
     }
-
-    setCommunityTopicsLoading(true);
-    setCommunityTopicsError(null);
-    fetchCommunityTopics()
-      .then((topics) => {
-        if (requestId === communityTopicsRequestId.current) {
-          setCommunityTopics(topics);
-        }
-      })
-      .catch((error: unknown) => {
-        console.error('Community topics API error:', error);
-        if (requestId === communityTopicsRequestId.current) {
-          setCommunityTopicsError('Не удалось загрузить темы научных школ.');
-        }
-      })
-      .finally(() => {
-        if (requestId === communityTopicsRequestId.current) {
-          setCommunityTopicsLoading(false);
-        }
-      });
   };
 
   useEffect(() => {
@@ -393,12 +374,18 @@ export default function App() {
         if (link.isInvisible) {
           const sourceId =
             typeof link.source === 'object' ? link.source.id : link.source;
-          const anchor = displayBigClamGraph.nodes.find(
-            (node: any) => node.id === sourceId
+        const communityId = Number(sourceId?.replace('community-', ''));
+        if (Number.isFinite(communityId)) {
+          const bounds = getCommunityHullBounds(
+            displayBigClamGraph.nodes,
+            communityId,
+            getHullRadius
           );
-          return getHullRadius(anchor?.memberCount || 1) * 0.7;
+          return Math.max(24, bounds.radius * 0.7);
         }
         return 100;
+      }
+      return 100;
       })
       .strength((link: any) => (link.isInvisible ? 0.1 : 0.4));
 
@@ -410,6 +397,17 @@ export default function App() {
             return getCollapsedCollisionRadius(node.memberCount || 0);
           }
           if (node.isAnchor) {
+            const communityId = Number(
+              String(node.id).replace('community-', '')
+            );
+            if (Number.isFinite(communityId)) {
+              const bounds = getCommunityHullBounds(
+                displayBigClamGraph.nodes,
+                communityId,
+                getHullRadius
+              );
+              return bounds.radius + 30;
+            }
             return getHullRadius(node.memberCount || 0) + 30;
           }
           return 0;

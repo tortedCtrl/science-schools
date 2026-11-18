@@ -6,6 +6,48 @@ interface CommunityHullProps {
   getRadius: (memberCount: number) => number;
 }
 
+export function getCommunityHullBounds(
+  nodes: any[],
+  communityId: number,
+  fallbackRadius: (memberCount: number) => number
+) {
+  const members = nodes.filter(
+    (node) =>
+      node.parentCommunityId === communityId &&
+      Number.isFinite(node.x) &&
+      Number.isFinite(node.y)
+  );
+  const anchor = nodes.find(
+    (node) => node.id === `community-${communityId}`
+  );
+
+  if (members.length === 0) {
+    return {
+      cx: anchor?.x ?? 0,
+      cy: anchor?.y ?? 0,
+      radius: fallbackRadius(anchor?.memberCount ?? 0),
+    };
+  }
+
+  const cx =
+    members.reduce((sum, member) => sum + (member.x as number), 0) /
+    members.length;
+  const cy =
+    members.reduce((sum, member) => sum + (member.y as number), 0) /
+    members.length;
+  const farthestMemberDistance = members.reduce((maximum, member) => {
+    const dx = (member.x as number) - cx;
+    const dy = (member.y as number) - cy;
+    return Math.max(maximum, Math.sqrt(dx * dx + dy * dy));
+  }, 0);
+
+  return {
+    cx,
+    cy,
+    radius: Math.max(24, farthestMemberDistance + 12),
+  };
+}
+
 export function drawCommunityHulls({ ctx, nodes, expandedCommunities, getRadius }: CommunityHullProps) {
   if (!ctx || !nodes.length) return;
 
@@ -15,12 +57,15 @@ export function drawCommunityHulls({ ctx, nodes, expandedCommunities, getRadius 
 
     const members = nodes.filter(n => n.parentCommunityId === cid);
     const memberCount = members.length;
+    const bounds = getCommunityHullBounds(nodes, cid, getRadius);
+    const cx = bounds.cx;
+    const cy = bounds.cy;
+    const radius = bounds.radius;
 
-    // 👇 Используем переданную функцию (вашу новую формулу)
-    const radius = getRadius(memberCount);
-
-    const cx = anchor.x ?? 0;
-    const cy = anchor.y ?? 0;
+    if (memberCount > 0) {
+      anchor.x = cx;
+      anchor.y = cy;
+    }
 
     ctx.save();
     ctx.beginPath();

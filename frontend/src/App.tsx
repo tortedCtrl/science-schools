@@ -1,19 +1,39 @@
-// src/App.tsx
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import ForceGraph2D from 'react-force-graph-2d';
+import * as d3 from 'd3-force';
 import {
   useCommunityTopics,
   useDatabase,
   type CommunityTopicsResponse,
 } from './hooks/backend';
-import { SearchPanel, type ColorMode } from './components/SearchPanel';
+import { useBclame } from './hooks/useBclame';
+import { useHierarchicalGraph } from './hooks/useHierarchicalGraph';
+import { SearchPanel, type AlgorithmMode, type ColorMode } from './components/SearchPanel';
 import { InfoPanel } from './components/InfoPanel';
 import { GraphView } from './components/GraphView';
+import { drawCommunityHulls } from './components/CommunityHull';
 import { getLinkId } from './utils/graph';
 import './App.css';
 
+const getVisualHullRadius = (memberCount: number) =>
+  50 + Math.sqrt(memberCount) * 7;
+
+const getHullRadius = (memberCount: number) =>
+  60 + Math.sqrt(memberCount) * 7;
+
+const getVisualRadius = (memberCount: number) =>
+  Math.min(18, 12 + memberCount * 1.5);
+
+const getCollapsedCollisionRadius = (memberCount: number) =>
+  getVisualRadius(memberCount) * 1.5 + 20;
+
 export default function App() {
-  const fetchData = useDatabase();
-  const fetchCommunityTopics = useCommunityTopics();
+  const fetchLeidenData = useDatabase();
+  const fetchBigClamData = useBclame();
+
+  const [algorithmMode, setAlgorithmMode] =
+    useState<AlgorithmMode>('bigclam');
+  const fetchCommunityTopics = useCommunityTopics(algorithmMode);
 
   const [searchName, setSearchName] = useState('');
   const [showAll, setShowAll] = useState(true);
@@ -21,7 +41,6 @@ export default function App() {
   const [vCap, setVCap] = useState<number | ''>(100);
   const [loading, setLoading] = useState(false);
 
-  // Состояния аналитических фич
   const [showHiddenLinks, setShowHiddenLinks] = useState(false);
   const [colorMode, setColorMode] = useState<ColorMode>('type');
   const [highlightCluster, setHighlightCluster] = useState(false);
@@ -34,35 +53,39 @@ export default function App() {
   >(null);
   const communityTopicsRequestId = useRef(0);
 
-  // Полный граф (последний ответ бэкенда)
-  const [fullGraphData, setFullGraphData] = useState<{ nodes: any[]; links: any[] }>({
-    nodes: [],
-    links: [],
-  });
+  const [fullGraphData, setFullGraphData] = useState<{
+    nodes: any[];
+    links: any[];
+  }>({ nodes: [], links: [] });
+  const [graphData, setGraphData] = useState<{
+    nodes: any[];
+    links: any[];
+  }>({ nodes: [], links: [] });
 
-  // Отображаемый граф
-  const [graphData, setGraphData] = useState<{ nodes: any[]; links: any[] }>({
-    nodes: [],
-    links: [],
-  });
+  const [rawGraph, setRawGraph] = useState<{
+    nodes: any[];
+    links: any[];
+  }>({ nodes: [], links: [] });
+  const [memberships, setMemberships] =
+    useState<Map<string, number>>(new Map());
+  const [expandedCommunities, setExpandedCommunities] =
+    useState<Set<number>>(new Set());
 
   const [selectedNode, setSelectedNode] = useState<any>(null);
-
-  // Открытость боковых шторок
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
 
-  // Размер вьюпорта для ForceGraph2D
   const viewportRef = useRef<HTMLDivElement>(null!);
+  const graphRef = useRef<any>(null);
   const [viewportSize, setViewportSize] = useState({ w: 0, h: 0 });
 
-  // Подгонка размера графа под контейнер
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = viewportRef.current;
     if (!el) return;
 
     const update = () => {
       const r = el.getBoundingClientRect();
+      if (r.width <= 1 || r.height <= 1) return;
       setViewportSize({
         w: Math.max(1, Math.floor(r.width)),
         h: Math.max(1, Math.floor(r.height)),
@@ -72,43 +95,124 @@ export default function App() {
     const ro = new ResizeObserver(update);
     ro.observe(el);
     update();
+    const frameIds: number[] = [];
+    frameIds.push(requestAnimationFrame(update));
+    frameIds.push(requestAnimationFrame(() => {
+      update();
+      frameIds.push(requestAnimationFrame(update));
+    }));
     window.addEventListener('resize', update);
 
     return () => {
       ro.disconnect();
+      frameIds.forEach((frameId) => cancelAnimationFrame(frameId));
       window.removeEventListener('resize', update);
     };
-  }, []);
+  }, [algorithmMode]);
 
-  // Загрузка графа с бэкенда. Возвращает свежие данные.
-  const reloadGraph = async (): Promise<{ nodes: any[]; links: any[] }> => {
+  const reloadLeidenGraph = async (): Promise<{
+    nodes: any[];
+    links: any[];
+  }> => {
     setLoading(true);
     try {
-      const data = await fetchData();
+      const data = await fetchLeidenData();
       const full = { nodes: data.nodes, links: data.links };
       setFullGraphData(full);
       setGraphData(full);
       setSelectedNode(null);
       return full;
-    } catch (e) {
-      console.error('API error:', e);
+    } catch (error) {
+      console.error('Leiden graph API error:', error);
       return { nodes: [], links: [] };
     } finally {
       setLoading(false);
     }
   };
 
-  // Загрузка при старте
   useEffect(() => {
-    reloadGraph();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (algorithmMode !== 'bigclam') return;
+
+    let isMounted = true;
+
+    async function loadBigClam() {
+      setLoading(true);
+      try {
+        const { memberships: membershipMap, projects } =
+          await fetchBigClamData();
+        if (!isMounted) return;
+
+        setMemberships(membershipMap);
+        setExpandedCommunities(new Set());
+        setSelectedNode(null);
+
+        const nodes: any[] = [];
+        membershipMap.forEach((communityId, authorId) => {
+          nodes.push({
+            id: String(authorId),
+            name: `Автор ${authorId}`,
+            community_id: communityId,
+            type: 'person',
+            location: 'RU',
+            info: `Ученый из сообщества #${communityId}`,
+          });
+        });
+
+        const links: any[] = [];
+        projects.forEach((project) => {
+          for (let i = 0; i < project.author_ids.length; i++) {
+            for (let j = i + 1; j < project.author_ids.length; j++) {
+              links.push({
+                source: project.author_ids[i],
+                target: project.author_ids[j],
+                isHidden: false,
+              });
+            }
+          }
+        });
+
+        const uniqueLinks = Array.from(
+          new Map(
+            links.map((link) => {
+              const source =
+                link.source < link.target ? link.source : link.target;
+              const target =
+                link.source < link.target ? link.target : link.source;
+              return [`${source}-${target}`, link];
+            })
+          ).values()
+        );
+
+        setRawGraph({ nodes, links: uniqueLinks });
+      } catch (error) {
+        console.error('BigCLAM graph error:', error);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    }
+
+    loadBigClam();
+    return () => {
+      isMounted = false;
+    };
+  }, [algorithmMode, fetchBigClamData]);
+
+  const displayBigClamGraph = useHierarchicalGraph(
+    rawGraph,
+    memberships,
+    expandedCommunities
+  );
 
   const toggleHighlightCluster = () => {
     const enabled = !highlightCluster;
     setHighlightCluster(enabled);
     const requestId = ++communityTopicsRequestId.current;
-    if (!enabled) return;
+
+    if (!enabled) {
+      setCommunityTopicsLoading(false);
+      setCommunityTopicsError(null);
+      return;
+    }
 
     setCommunityTopicsLoading(true);
     setCommunityTopicsError(null);
@@ -131,15 +235,40 @@ export default function App() {
       });
   };
 
-  // Поиск: сначала тянем свежий граф, потом фильтруем
-  const handleSearch = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
+  useEffect(() => {
+    if (!highlightCluster) return;
+    communityTopicsRequestId.current += 1;
+    const requestId = communityTopicsRequestId.current;
 
-    const full = await reloadGraph();
+    setCommunityTopicsLoading(true);
+    setCommunityTopicsError(null);
+    fetchCommunityTopics()
+      .then((topics) => {
+        if (requestId === communityTopicsRequestId.current) {
+          setCommunityTopics(topics);
+        }
+      })
+      .catch((error: unknown) => {
+        console.error('Community topics API error:', error);
+        if (requestId === communityTopicsRequestId.current) {
+          setCommunityTopicsError('Не удалось загрузить темы научных школ.');
+        }
+      })
+      .finally(() => {
+        if (requestId === communityTopicsRequestId.current) {
+          setCommunityTopicsLoading(false);
+        }
+      });
+  }, [algorithmMode, highlightCluster, fetchCommunityTopics]);
 
+  const handleLeidenSearch = async (event?: React.FormEvent) => {
+    if (event) event.preventDefault();
+    if (algorithmMode === 'bigclam') return;
+
+    const full = await reloadLeidenGraph();
     const baseLinks = showHiddenLinks
       ? full.links
-      : full.links.filter((l: any) => !l.isHidden);
+      : full.links.filter((link: any) => !link.isHidden);
 
     if (showAll || !searchName.trim()) {
       setGraphData({ nodes: full.nodes, links: baseLinks });
@@ -151,7 +280,6 @@ export default function App() {
         node.name.toLowerCase().includes(searchName.toLowerCase()) ||
         node.id === searchName
     );
-
     if (!targetNode) {
       setGraphData({ nodes: [], links: [] });
       setSelectedNode(null);
@@ -159,76 +287,185 @@ export default function App() {
     }
 
     setSelectedNode(targetNode);
-
-    const visitedNodeIds = new Set<string>([targetNode.id]);
-    let currentLayerIds = new Set<string>([targetNode.id]);
+    const visited = new Set<string>([targetNode.id]);
+    let current = new Set<string>([targetNode.id]);
 
     for (let depth = 0; depth < searchDepth; depth++) {
-      const nextLayerIds = new Set<string>();
-
+      const next = new Set<string>();
       baseLinks.forEach((link: any) => {
-        const s = getLinkId(link.source);
-        const t = getLinkId(link.target);
-
-        if (currentLayerIds.has(s) && !visitedNodeIds.has(t)) {
-          nextLayerIds.add(t);
-          visitedNodeIds.add(t);
+        const source = getLinkId(link.source);
+        const target = getLinkId(link.target);
+        if (current.has(source) && !visited.has(target)) {
+          visited.add(target);
+          next.add(target);
         }
-        if (currentLayerIds.has(t) && !visitedNodeIds.has(s)) {
-          nextLayerIds.add(s);
-          visitedNodeIds.add(s);
+        if (current.has(target) && !visited.has(source)) {
+          visited.add(source);
+          next.add(source);
         }
       });
-
-      if (nextLayerIds.size === 0) break;
-      currentLayerIds = nextLayerIds;
+      if (!next.size) break;
+      current = next;
     }
 
     const filteredLinks = baseLinks.filter((link: any) => {
-      const s = getLinkId(link.source);
-      const t = getLinkId(link.target);
-      return visitedNodeIds.has(s) && visitedNodeIds.has(t);
+      const source = getLinkId(link.source);
+      const target = getLinkId(link.target);
+      return visited.has(source) && visited.has(target);
     });
-
     let filteredNodes = full.nodes.filter((node: any) =>
-      visitedNodeIds.has(node.id)
+      visited.has(node.id)
     );
     if (vCap !== '' && filteredNodes.length > vCap) {
       filteredNodes = filteredNodes.slice(0, vCap);
     }
-
     setGraphData({ nodes: filteredNodes, links: filteredLinks });
   };
 
-  // Быстрое включение скрытых связей (локально, по текущему fullGraphData)
   const toggleHiddenLinks = (checked: boolean) => {
     setShowHiddenLinks(checked);
+    if (algorithmMode === 'bigclam') return;
 
     const baseLinks = checked
       ? fullGraphData.links
-      : fullGraphData.links.filter((l: any) => !l.isHidden);
+      : fullGraphData.links.filter((link: any) => !link.isHidden);
 
     if (showAll || !searchName.trim()) {
       setGraphData({ nodes: fullGraphData.nodes, links: baseLinks });
     } else {
-      const currentNodeIds = new Set(graphData.nodes.map((n: any) => n.id));
+      const nodeIds = new Set(graphData.nodes.map((node: any) => node.id));
       const filteredLinks = baseLinks.filter((link: any) => {
-        const s = getLinkId(link.source);
-        const t = getLinkId(link.target);
-        return currentNodeIds.has(s) && currentNodeIds.has(t);
+        const source = getLinkId(link.source);
+        const target = getLinkId(link.target);
+        return nodeIds.has(source) && nodeIds.has(target);
       });
-      setGraphData((prev) => ({ ...prev, links: filteredLinks }));
+      setGraphData((previous) => ({
+        ...previous,
+        links: filteredLinks,
+      }));
     }
   };
 
-  // Галочка «Показать граф полностью» — тянем свежий граф с бэкенда
   const handleShowAllChange = (checked: boolean) => {
     setShowAll(checked);
-
-    if (checked) {
+    if (algorithmMode === 'leiden' && checked) {
       setSearchName('');
-      reloadGraph();
+      reloadLeidenGraph();
     }
+  };
+
+  useEffect(() => {
+    if (algorithmMode !== 'bigclam') return;
+    const graph = graphRef.current;
+    if (!graph) return;
+
+    graph.d3Force('charge')?.strength(-250);
+    graph.d3Force('link')
+      ?.distance((link: any) => {
+        if (link.isInvisible) {
+          const sourceId =
+            typeof link.source === 'object' ? link.source.id : link.source;
+          const anchor = displayBigClamGraph.nodes.find(
+            (node: any) => node.id === sourceId
+          );
+          return getHullRadius(anchor?.memberCount || 1) * 0.7;
+        }
+        return 100;
+      })
+      .strength((link: any) => (link.isInvisible ? 0.1 : 0.4));
+
+    graph.d3Force(
+      'collision',
+      d3
+        .forceCollide((node: any) => {
+          if (node.isCommunity && !node.isAnchor) {
+            return getCollapsedCollisionRadius(node.memberCount || 0);
+          }
+          if (node.isAnchor) {
+            return getHullRadius(node.memberCount || 0) + 30;
+          }
+          return 0;
+        })
+        .strength(1)
+        .iterations(3)
+    );
+  }, [algorithmMode, expandedCommunities, displayBigClamGraph.nodes]);
+
+  const handleBigClamNodeClick = (node: any) => {
+    if (node.isCommunity) {
+      const communityId = parseInt(node.id.split('-')[1], 10);
+      setExpandedCommunities((previous) => {
+        const next = new Set(previous);
+        if (next.has(communityId)) next.delete(communityId);
+        else next.add(communityId);
+        return next;
+      });
+      return;
+    }
+
+    setSelectedNode({
+      ...node,
+      community_id: memberships.get(node.id) ?? node.community_id,
+    });
+    setRightOpen(true);
+  };
+
+  const bigClamNodeCanvasObject = (
+    node: any,
+    ctx: CanvasRenderingContext2D,
+    globalScale: number
+  ) => {
+    const posX = node.x ?? 0;
+    const posY = node.y ?? 0;
+    const fontSize = Math.max(4, 12 / globalScale);
+
+    if (node.isAnchor) {
+      ctx.beginPath();
+      ctx.arc(posX, posY, 8, 0, 2 * Math.PI);
+      ctx.fillStyle = '#eb2f96';
+      ctx.fill();
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2 / globalScale;
+      ctx.stroke();
+      ctx.fillStyle = '#fff';
+      ctx.font = `bold ${7 / globalScale}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('×', posX, posY);
+      return;
+    }
+
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    if (node.isCommunity) {
+      const radius = getVisualRadius(node.memberCount || 0);
+      ctx.beginPath();
+      ctx.arc(posX, posY, radius, 0, 2 * Math.PI);
+      ctx.fillStyle = '#eb2f96';
+      ctx.fill();
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2 / globalScale;
+      ctx.stroke();
+      ctx.fillStyle = '#fff';
+      ctx.font = `bold ${fontSize * 0.9}px sans-serif`;
+      ctx.fillText(node.name || '', posX, posY - 2);
+      if (node.memberCount) {
+        ctx.font = `${fontSize * 0.7}px sans-serif`;
+        ctx.fillText(`(${node.memberCount})`, posX, posY + 8 / globalScale);
+      }
+      return;
+    }
+
+    ctx.beginPath();
+    ctx.arc(posX, posY, 6, 0, 2 * Math.PI);
+    ctx.fillStyle = '#1890ff';
+    ctx.fill();
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1.5 / globalScale;
+    ctx.stroke();
+    ctx.fillStyle = '#fff';
+    ctx.font = `${fontSize}px sans-serif`;
+    ctx.fillText(node.name || '', posX, posY + 12 / globalScale);
   };
 
   return (
@@ -243,33 +480,104 @@ export default function App() {
         vCap={vCap}
         setVCap={setVCap}
         loading={loading}
-        onSubmit={handleSearch}
+        onSubmit={handleLeidenSearch}
         showHiddenLinks={showHiddenLinks}
         onToggleHiddenLinks={toggleHiddenLinks}
         colorMode={colorMode}
         setColorMode={setColorMode}
         highlightCluster={highlightCluster}
         onToggleHighlightCluster={toggleHighlightCluster}
+        algorithmMode={algorithmMode}
+        onAlgorithmModeChange={(mode) => {
+          if (mode === algorithmMode) return;
+          setAlgorithmMode(mode);
+          setSelectedNode(null);
+          setExpandedCommunities(new Set());
+
+          [0, 16, 50, 100].forEach((delay) => {
+            window.setTimeout(() => {
+              const el = viewportRef.current;
+              if (!el) return;
+              const rect = el.getBoundingClientRect();
+              if (rect.width <= 1 || rect.height <= 1) return;
+              setViewportSize({
+                w: Math.floor(rect.width),
+                h: Math.floor(rect.height),
+              });
+            }, delay);
+          });
+
+          if (mode === 'leiden') {
+            void reloadLeidenGraph();
+          } else {
+            setRawGraph({ nodes: [], links: [] });
+            setMemberships(new Map());
+          }
+        }}
         leftOpen={leftOpen}
-        onToggleLeft={() => setLeftOpen((v) => !v)}
+        onToggleLeft={() => setLeftOpen((value) => !value)}
       />
 
-      <GraphView
-        graphData={graphData}
-        viewportSize={viewportSize}
-        viewportRef={viewportRef}
-        colorMode={colorMode}
-        highlightCluster={highlightCluster}
-        onNodeClick={(node: any) => {
-          setSelectedNode(node);
-          setRightOpen(true);
-        }}
-      />
+      {algorithmMode === 'leiden' ? (
+        <GraphView
+          key="leiden-graph"
+          graphData={graphData}
+          viewportSize={viewportSize}
+          viewportRef={viewportRef}
+          colorMode={colorMode}
+          highlightCluster={highlightCluster}
+          onNodeClick={(node) => {
+            setSelectedNode(node);
+            setRightOpen(true);
+          }}
+        />
+      ) : (
+        <main key="bigclam-graph" className="graph-viewport" ref={viewportRef}>
+          {loading && (
+            <div className="loading-overlay">
+              <span>Загрузка сообществ BigCLAM...</span>
+            </div>
+          )}
+          {viewportSize.w > 0 && viewportSize.h > 0 && (
+            <ForceGraph2D
+              ref={graphRef}
+              graphData={displayBigClamGraph}
+              width={viewportSize.w}
+              height={viewportSize.h}
+              nodeCanvasObject={bigClamNodeCanvasObject}
+              linkColor={(link: any) =>
+                link.isInvisible
+                  ? 'rgba(0,0,0,0)'
+                  : link.isHidden
+                    ? '#ff4d4f'
+                    : 'rgba(255,255,255,0.3)'
+              }
+              linkWidth={(link: any) =>
+                link.isInvisible ? 0 : link.isHidden ? 2 : 1
+              }
+              linkDirectionalParticles={(link: any) =>
+                link.isHidden ? 3 : 0
+              }
+              onNodeClick={handleBigClamNodeClick}
+              cooldownTicks={200}
+              warmupTicks={100}
+              onRenderFramePost={(ctx) => {
+                drawCommunityHulls({
+                  ctx,
+                  nodes: displayBigClamGraph.nodes,
+                  expandedCommunities,
+                  getRadius: getVisualHullRadius,
+                });
+              }}
+            />
+          )}
+        </main>
+      )}
 
       <InfoPanel
         selectedNode={selectedNode}
         rightOpen={rightOpen}
-        onToggleRight={() => setRightOpen((v) => !v)}
+        onToggleRight={() => setRightOpen((value) => !value)}
         showCommunityTopics={highlightCluster}
         communityTopics={communityTopics}
         communityTopicsLoading={communityTopicsLoading}

@@ -1,3 +1,4 @@
+// src/hooks/backend.tsx
 import { useCallback } from 'react';
 
 import { api } from '../api';
@@ -10,6 +11,7 @@ export type CommunityTopic = {
 };
 
 export type CommunityTopicsResponse = {
+    run_id?: number;
     community_id: number;
     topics: CommunityTopic[];
 };
@@ -42,7 +44,7 @@ type GraphResponse = {
 };
 
 export function useDatabase(): () => Promise<GraphResponse> {
-    async function fetchData(): Promise<GraphResponse> {
+    return useCallback(async (): Promise<GraphResponse> => {
         const res = await api.get<GraphResponse>('/graph');
         const data = res.data;
 
@@ -61,17 +63,19 @@ export function useDatabase(): () => Promise<GraphResponse> {
             target: String(l.target),
             isHidden: false,
         }));
-
         return { nodes, links };
-    }
-    return fetchData;
+        return { nodes, links };
+    }, []);
 }
 
-export function useCommunityTopics(): () => Promise<CommunityTopicsResponse[]> {
+export function useCommunityTopics(
+    algorithm: 'leiden' | 'bigclam' = 'leiden'
+): () => Promise<CommunityTopicsResponse[]> {
     return useCallback(async () => {
         const response = await api.get<CommunityTopicsResponse[]>(
-            '/communities/topics'
+            '/communities/topics',
+            { params: { algorithm } }
         );
         return response.data;
-    }, []);
+    }, [algorithm]);
 }

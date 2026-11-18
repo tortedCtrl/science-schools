@@ -1,6 +1,7 @@
 // src/components/SearchPanel/SearchPanel.types.ts
 
 export type ColorMode = 'type' | 'geo';
+export type AlgorithmMode = 'leiden' | 'bigclam';
 
 export interface SearchPanelProps {
   searchName: string;
@@ -26,6 +27,9 @@ export interface SearchPanelProps {
 
   highlightCluster: boolean;
   onToggleHighlightCluster: () => void;
+
+  algorithmMode: AlgorithmMode;
+  onAlgorithmModeChange: (mode: AlgorithmMode) => void;
 
   leftOpen: boolean;
   onToggleLeft: () => void;

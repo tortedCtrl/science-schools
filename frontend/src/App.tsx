@@ -2,10 +2,9 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import * as d3 from 'd3-force';
 import {
   useCommunityTopics,
-  useDatabase,
+  useGraph,
   type CommunityTopic,
 } from './hooks/backend';
-import { useBclame } from './hooks/useBclame';
 import { useHierarchicalGraph } from './hooks/useHierarchicalGraph';
 import { SearchPanel, type AlgorithmMode, type ColorMode } from './components/SearchPanel';
 import { InfoPanel } from './components/InfoPanel';
@@ -30,8 +29,8 @@ const getCollapsedCollisionRadius = (memberCount: number) =>
   getVisualRadius(memberCount) * 1.5 + 20;
 
 export default function App() {
-  const fetchLeidenData = useDatabase();
-  const fetchBigClamData = useBclame();
+  const fetchLeidenData = useGraph('leiden');
+  const fetchBigClamData = useGraph('bigclam');
 
   const [algorithmMode, setAlgorithmMode] =
     useState<AlgorithmMode>('leiden');
@@ -69,7 +68,7 @@ export default function App() {
     links: any[];
   }>({ nodes: [], links: [] });
   const [memberships, setMemberships] =
-    useState<Map<string, number>>(new Map());
+    useState<Map<string, number[]>>(new Map());
   const [expandedCommunities, setExpandedCommunities] =
     useState<Set<number>>(new Set());
 
@@ -163,59 +162,16 @@ export default function App() {
           return;
         }
 
-        const { memberships: membershipMap, projects } =
+        const { memberships: membershipMap, nodes, links } =
           await fetchBigClamData();
         if (!isMounted) return;
 
-        const validMemberships =
-          membershipMap instanceof Map && membershipMap.size > 0
-            ? membershipMap
-            : new Map<string, number>();
-        const validProjects = Array.isArray(projects) ? projects : [];
-
-        setMemberships(validMemberships);
+        setMemberships(membershipMap);
         setExpandedCommunities(new Set());
-
-        const nodes: any[] = [];
-        validMemberships.forEach((communityId, authorId) => {
-          nodes.push({
-            id: String(authorId),
-            name: `Автор ${authorId}`,
-            community_id: communityId,
-            type: 'person',
-            location: 'RU',
-            info: `Ученый из сообщества #${communityId}`,
-          });
-        });
-
-        const links: any[] = [];
-        validProjects.forEach((project) => {
-          if (!Array.isArray(project?.author_ids)) return;
-          for (let i = 0; i < project.author_ids.length; i++) {
-            for (let j = i + 1; j < project.author_ids.length; j++) {
-              links.push({
-                source: project.author_ids[i],
-                target: project.author_ids[j],
-                isHidden: false,
-              });
-            }
-          }
-        });
-
-        const uniqueLinks = Array.from(
-          new Map(
-            links.map((link) => {
-              const source =
-                link.source < link.target ? link.source : link.target;
-              const target =
-                link.source < link.target ? link.target : link.source;
-              return [`${source}-${target}`, link];
-            })
-          ).values()
+        setRawGraph({ nodes, links });
+        setGraphStatus(
+          nodes.length === 0 || membershipMap.size === 0 ? 'empty' : 'ready'
         );
-
-        setRawGraph({ nodes, links: uniqueLinks });
-        setGraphStatus(nodes.length === 0 ? 'empty' : 'ready');
       } catch (error) {
         console.error('BigCLAM graph error:', error);
         setMemberships(new Map());
@@ -255,7 +211,7 @@ export default function App() {
     const requestId = communityTopicsRequestId.current;
     setCommunityTopics([]);
     setCommunityTopicsError(null);
-    if (!highlightCluster || selectedCommunityId == null) {
+    if (selectedCommunityId == null) {
       setCommunityTopicsLoading(false);
       return;
     }
@@ -280,7 +236,6 @@ export default function App() {
       });
   }, [
     algorithmMode,
-    highlightCluster,
     selectedCommunityId,
     fetchCommunityTopics,
   ]);
@@ -452,7 +407,11 @@ export default function App() {
 
     setSelectedNode({
       ...node,
-      community_id: memberships.get(node.id) ?? node.community_id,
+      id: node.originalNodeId ?? node.id,
+      community_id:
+        node.parentCommunityId ??
+        memberships.get(node.originalNodeId ?? node.id)?.[0] ??
+        node.community_id,
     });
     setRightOpen(true);
   };
@@ -616,7 +575,9 @@ export default function App() {
         )}
         {!loading && graphStatus === 'empty' && (
           <div className="graph-status graph-status-empty">
-            Данные отсутствуют или ещё обрабатываются сервером
+            {algorithmMode === 'bigclam'
+              ? 'Результаты BigCLAM ещё не рассчитаны или отсутствуют'
+              : 'Данные отсутствуют или ещё обрабатываются сервером'}
           </div>
         )}
       </div>
@@ -625,7 +586,7 @@ export default function App() {
         selectedNode={selectedNode}
         rightOpen={rightOpen}
         onToggleRight={() => setRightOpen((value) => !value)}
-        showCommunityTopics={highlightCluster}
+        showCommunityTopics={selectedCommunityId !== null}
         communityTopics={communityTopics}
         communityTopicsLoading={communityTopicsLoading}
         communityTopicsError={communityTopicsError}

@@ -18,52 +18,100 @@ export type DatabaseResponse = {
     openalex_id: string;
 };
 
-type GraphNode = {
-    id: string;
-    name: string;
+type ApiGraphNode = {
+    id: number | string;
+    name?: string;
     community_id?: number | null;
+    communities?: ({ community_id: number } | number)[] | null;
     institution_name?: string | null;
 };
 
-type GraphLink = {
-    source: string;
-    target: string;
-    //weight: number;
-    isHidden: boolean;
+type ApiGraphLink = {
+    source: number | string;
+    target: number | string;
 };
 
-type GraphResponse = {
-    nodes: GraphNode[] | null;
-    links: GraphLink[] | null;
+type ApiGraphResponse = {
+    nodes: ApiGraphNode[] | null;
+    links: ApiGraphLink[] | null;
 };
 
-export function useDatabase(): () => Promise<GraphResponse> {
+export type GraphResponse = {
+    nodes: Record<string, unknown>[];
+    links: { source: string; target: string; isHidden: boolean }[];
+    memberships: Map<string, number[]>;
+};
+
+export function useGraph(
+    algorithm: 'leiden' | 'bigclam'
+): () => Promise<GraphResponse> {
     return useCallback(async (): Promise<GraphResponse> => {
-        const res = await api.get<GraphResponse | null>('/graph');
+        const res = await api.get<ApiGraphResponse | null>('/graph', {
+            params: { algorithm },
+        });
         const data = res.data;
         if (!data || !Array.isArray(data.nodes) || !Array.isArray(data.links)) {
-            return { nodes: [], links: [] };
+            return { nodes: [], links: [], memberships: new Map() };
         }
 
+        const memberships = new Map<string, number[]>();
         const nodes = data.nodes
-            .filter((n) => n && (typeof n.id === 'number' || typeof n.id === 'string'))
-            .map((n) => ({
-            id: String(n.id),
-            name: typeof n.name === 'string' ? n.name : `Автор ${n.id}`,
-            community_id: n.community_id ?? null,
-            val: 1,
-            type: 'person' as const,
-            location: (n.institution_name ? 'RU' : 'INT') as 'RU' | 'INT',
-            info: n.institution_name ?? undefined,
-        }));
+            .filter(
+                (node): node is ApiGraphNode =>
+                    !!node &&
+                    (typeof node.id === 'number' || typeof node.id === 'string')
+            )
+            .map((node) => {
+                const id = String(node.id);
+                const communityIds = Array.isArray(node.communities)
+                    ? node.communities
+                          .map((community) =>
+                              typeof community === 'number'
+                                  ? community
+                                  : community?.community_id
+                          )
+                          .filter(
+                              (communityId): communityId is number =>
+                                  Number.isInteger(communityId)
+                          )
+                    : [];
+                if (
+                    communityIds.length === 0 &&
+                    typeof node.community_id === 'number' &&
+                    Number.isInteger(node.community_id)
+                ) {
+                    communityIds.push(node.community_id);
+                }
+                if (communityIds.length > 0) {
+                    memberships.set(id, [...new Set(communityIds)]);
+                }
+                return {
+                    id,
+                    name: typeof node.name === 'string' ? node.name : `Автор ${id}`,
+                    community_id: communityIds[0] ?? null,
+                    type: 'person' as const,
+                    location: (node.institution_name ? 'RU' : 'INT') as 'RU' | 'INT',
+                    info: node.institution_name ?? undefined,
+                    val: 1,
+                };
+            });
 
-        const links = data.links.map((l) => ({
-            source: String(l.source),
-            target: String(l.target),
-            isHidden: false,
-        }));
-        return { nodes, links };
-    }, []);
+        const links = data.links
+            .filter(
+                (link): link is ApiGraphLink =>
+                    !!link &&
+                    (typeof link.source === 'number' ||
+                        typeof link.source === 'string') &&
+                    (typeof link.target === 'number' ||
+                        typeof link.target === 'string')
+            )
+            .map((link) => ({
+                source: String(link.source),
+                target: String(link.target),
+                isHidden: false,
+            }));
+        return { nodes, links, memberships };
+    }, [algorithm]);
 }
 
 export function useCommunityTopics(

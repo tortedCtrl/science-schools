@@ -25,7 +25,7 @@ export interface HierarchicalGraphLink {
 
 export function useHierarchicalGraph(
   rawGraph: { nodes: any[]; links: any[] },
-  memberships: Map<string, number>,
+  memberships: Map<string, number[]>,
   expandedCommunities: Set<number>
 ) {
   return useMemo(() => {
@@ -37,10 +37,12 @@ export function useHierarchicalGraph(
     const unassignedNodes: any[] = [];
 
     rawGraph.nodes.forEach(node => {
-      const cid = memberships.get(node.id);
-      if (cid !== undefined) {
-        if (!authorsByCommunity.has(cid)) authorsByCommunity.set(cid, []);
-        authorsByCommunity.get(cid)!.push(node);
+      const communityIds = memberships.get(node.id) ?? [];
+      if (communityIds.length > 0) {
+        communityIds.forEach(cid => {
+          if (!authorsByCommunity.has(cid)) authorsByCommunity.set(cid, []);
+          authorsByCommunity.get(cid)!.push(node);
+        });
       } else {
         unassignedNodes.push(node);
       }
@@ -67,6 +69,8 @@ export function useHierarchicalGraph(
         authors.forEach(author => {
           displayNodes.push({
             ...author,
+            id: `${author.id}__community_${cid}`,
+            originalNodeId: author.id,
             parentCommunityId: cid,
           });
         });
@@ -74,7 +78,7 @@ export function useHierarchicalGraph(
         authors.forEach(author => {
           displayLinks.push({
             source: anchorId,
-            target: author.id,
+            target: `${author.id}__community_${cid}`,
             isInvisible: true,
             isHidden: false,
           });
@@ -100,67 +104,46 @@ export function useHierarchicalGraph(
     const visibleNodeIds = new Set(displayNodes.map(n => n.id));
 
     // 3. Агрегация связей между сообществами (через общие проекты)
-    const communityLinksMap = new Map<string, boolean>();
-    rawGraph.links.forEach(link => {
-      const s = typeof link.source === 'object' ? link.source.id : link.source;
-      const t = typeof link.target === 'object' ? link.target.id : link.target;
-      const sCid = memberships.get(s);
-      const tCid = memberships.get(t);
-      if (sCid !== undefined && tCid !== undefined && sCid !== tCid) {
-        const key = sCid < tCid ? `${sCid}-${tCid}` : `${tCid}-${sCid}`;
-        communityLinksMap.set(key, true);
-      }
-    });
-
-    communityLinksMap.forEach((_, key) => {
-      const [cid1, cid2] = key.split('-').map(Number);
-      const id1 = `community-${cid1}`;
-      const id2 = `community-${cid2}`;
-      if (visibleNodeIds.has(id1) && visibleNodeIds.has(id2)) {
-        displayLinks.push({
-          source: id1,
-          target: id2,
-          isHidden: false,
-        });
-      }
-    });
-
-    // 4. Формируем связи внутри сообществ
+    // 3. Проецируем исходные связи на узлы сообществ и раскрытых авторов.
     const rawLinks = rawGraph.links || [];
 
     rawLinks.forEach(link => {
       const s = typeof link.source === 'object' ? link.source.id : link.source;
       const t = typeof link.target === 'object' ? link.target.id : link.target;
-      const sCid = memberships.get(s);
-      const tCid = memberships.get(t);
+      const sourceCommunities = memberships.get(s) ?? [];
+      const targetCommunities = memberships.get(t) ?? [];
+      const sourceIds =
+        sourceCommunities.length === 0
+          ? [s]
+          : sourceCommunities.map(cid =>
+              expandedCommunities.has(cid)
+                ? `${s}__community_${cid}`
+                : `community-${cid}`
+            );
+      const targetIds =
+        targetCommunities.length === 0
+          ? [t]
+          : targetCommunities.map(cid =>
+              expandedCommunities.has(cid)
+                ? `${t}__community_${cid}`
+                : `community-${cid}`
+            );
 
-      // Пропускаем связи между разными сообществами (они уже агрегированы)
-      if (sCid !== undefined && tCid !== undefined && sCid !== tCid) {
-        return;
-      }
-
-      // 👇 УБРАНО условие, которое отбрасывало связи внутри развёрнутого сообщества
-      // (раньше здесь был return, теперь связи внутри hull видны)
-
-      let sourceId = s;
-      let targetId = t;
-
-      if (sCid !== undefined && !expandedCommunities.has(sCid)) {
-        sourceId = `community-${sCid}`;
-      }
-      if (tCid !== undefined && !expandedCommunities.has(tCid)) {
-        targetId = `community-${tCid}`;
-      }
-
-      if (sourceId === targetId) return;
-
-      if (visibleNodeIds.has(sourceId) && visibleNodeIds.has(targetId)) {
-        displayLinks.push({
-          source: sourceId,
-          target: targetId,
-          isHidden: link.isHidden,
+      sourceIds.forEach(sourceId => {
+        targetIds.forEach(targetId => {
+          if (
+            sourceId !== targetId &&
+            visibleNodeIds.has(sourceId) &&
+            visibleNodeIds.has(targetId)
+          ) {
+            displayLinks.push({
+              source: sourceId,
+              target: targetId,
+              isHidden: link.isHidden,
+            });
+          }
         });
-      }
+      });
     });
 
     // Удаляем дубликаты

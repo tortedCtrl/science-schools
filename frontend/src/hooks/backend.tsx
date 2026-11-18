@@ -39,18 +39,23 @@ type GraphLink = {
 };
 
 type GraphResponse = {
-    nodes: GraphNode[];
-    links: GraphLink[];
+    nodes: GraphNode[] | null;
+    links: GraphLink[] | null;
 };
 
 export function useDatabase(): () => Promise<GraphResponse> {
     return useCallback(async (): Promise<GraphResponse> => {
-        const res = await api.get<GraphResponse>('/graph');
+        const res = await api.get<GraphResponse | null>('/graph');
         const data = res.data;
+        if (!data || !Array.isArray(data.nodes) || !Array.isArray(data.links)) {
+            return { nodes: [], links: [] };
+        }
 
-        const nodes = (data.nodes ?? []).map((n) => ({
+        const nodes = data.nodes
+            .filter((n) => n && (typeof n.id === 'number' || typeof n.id === 'string'))
+            .map((n) => ({
             id: String(n.id),
-            name: n.name,
+            name: typeof n.name === 'string' ? n.name : `Автор ${n.id}`,
             community_id: n.community_id ?? null,
             val: 1,
             type: 'person' as const,
@@ -58,12 +63,11 @@ export function useDatabase(): () => Promise<GraphResponse> {
             info: n.institution_name ?? undefined,
         }));
 
-        const links = (data.links ?? []).map((l) => ({
+        const links = data.links.map((l) => ({
             source: String(l.source),
             target: String(l.target),
             isHidden: false,
         }));
-        return { nodes, links };
         return { nodes, links };
     }, []);
 }

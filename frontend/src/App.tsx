@@ -1,5 +1,4 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import ForceGraph2D from 'react-force-graph-2d';
 import * as d3 from 'd3-force';
 import {
   useCommunityTopics,
@@ -40,6 +39,9 @@ export default function App() {
   const [searchDepth, setSearchDepth] = useState(1);
   const [vCap, setVCap] = useState<number | ''>(100);
   const [loading, setLoading] = useState(false);
+  const [graphStatus, setGraphStatus] = useState<
+    'loading' | 'ready' | 'empty' | 'error'
+  >('loading');
 
   const [showHiddenLinks, setShowHiddenLinks] = useState(false);
   const [colorMode, setColorMode] = useState<ColorMode>('type');
@@ -115,39 +117,58 @@ export default function App() {
     links: any[];
   }> => {
     setLoading(true);
+    setGraphStatus('loading');
     try {
       const data = await fetchLeidenData();
-      const full = { nodes: data.nodes, links: data.links };
+      const nodes = Array.isArray(data?.nodes) ? data.nodes : [];
+      const links = Array.isArray(data?.links) ? data.links : [];
+      const full = { nodes, links };
       setFullGraphData(full);
       setGraphData(full);
       setSelectedNode(null);
+      setGraphStatus(full.nodes.length === 0 ? 'empty' : 'ready');
       return full;
     } catch (error) {
       console.error('Leiden graph API error:', error);
-      return { nodes: [], links: [] };
+      const empty = { nodes: [], links: [] };
+      setFullGraphData(empty);
+      setGraphData(empty);
+      setGraphStatus('error');
+      return empty;
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    if (algorithmMode !== 'bigclam') return;
-
     let isMounted = true;
 
-    async function loadBigClam() {
+    async function loadMode() {
       setLoading(true);
+      setGraphStatus('loading');
+      setSelectedNode(null);
+
       try {
+        if (algorithmMode === 'leiden') {
+          await reloadLeidenGraph();
+          return;
+        }
+
         const { memberships: membershipMap, projects } =
           await fetchBigClamData();
         if (!isMounted) return;
 
-        setMemberships(membershipMap);
+        const validMemberships =
+          membershipMap instanceof Map && membershipMap.size > 0
+            ? membershipMap
+            : new Map<string, number>();
+        const validProjects = Array.isArray(projects) ? projects : [];
+
+        setMemberships(validMemberships);
         setExpandedCommunities(new Set());
-        setSelectedNode(null);
 
         const nodes: any[] = [];
-        membershipMap.forEach((communityId, authorId) => {
+        validMemberships.forEach((communityId, authorId) => {
           nodes.push({
             id: String(authorId),
             name: `Автор ${authorId}`,
@@ -159,7 +180,8 @@ export default function App() {
         });
 
         const links: any[] = [];
-        projects.forEach((project) => {
+        validProjects.forEach((project) => {
+          if (!Array.isArray(project?.author_ids)) return;
           for (let i = 0; i < project.author_ids.length; i++) {
             for (let j = i + 1; j < project.author_ids.length; j++) {
               links.push({
@@ -184,14 +206,18 @@ export default function App() {
         );
 
         setRawGraph({ nodes, links: uniqueLinks });
+        setGraphStatus(nodes.length === 0 ? 'empty' : 'ready');
       } catch (error) {
         console.error('BigCLAM graph error:', error);
+        setMemberships(new Map());
+        setRawGraph({ nodes: [], links: [] });
+        setGraphStatus('error');
       } finally {
         if (isMounted) setLoading(false);
       }
     }
 
-    loadBigClam();
+    loadMode();
     return () => {
       isMounted = false;
     };
@@ -202,6 +228,8 @@ export default function App() {
     memberships,
     expandedCommunities
   );
+  const currentGraphData =
+    algorithmMode === 'bigclam' ? displayBigClamGraph : graphData;
 
   const toggleHighlightCluster = () => {
     const enabled = !highlightCluster;
@@ -493,86 +521,86 @@ export default function App() {
           setAlgorithmMode(mode);
           setSelectedNode(null);
           setExpandedCommunities(new Set());
-
-          [0, 16, 50, 100].forEach((delay) => {
-            window.setTimeout(() => {
-              const el = viewportRef.current;
-              if (!el) return;
-              const rect = el.getBoundingClientRect();
-              if (rect.width <= 1 || rect.height <= 1) return;
-              setViewportSize({
-                w: Math.floor(rect.width),
-                h: Math.floor(rect.height),
-              });
-            }, delay);
-          });
-
-          if (mode === 'leiden') {
-            void reloadLeidenGraph();
-          } else {
-            setRawGraph({ nodes: [], links: [] });
-            setMemberships(new Map());
-          }
+          setRawGraph({ nodes: [], links: [] });
+          setMemberships(new Map());
+          setGraphData({ nodes: [], links: [] });
+          setFullGraphData({ nodes: [], links: [] });
         }}
         leftOpen={leftOpen}
         onToggleLeft={() => setLeftOpen((value) => !value)}
       />
 
-      {algorithmMode === 'leiden' ? (
+      <div className="graph-stage">
         <GraphView
-          key="leiden-graph"
-          graphData={graphData}
+          key={`graph-${algorithmMode}`}
+          graphData={currentGraphData}
           viewportSize={viewportSize}
           viewportRef={viewportRef}
+          graphRef={graphRef}
           colorMode={colorMode}
           highlightCluster={highlightCluster}
+          nodeCanvasObject={
+            algorithmMode === 'bigclam'
+              ? bigClamNodeCanvasObject
+              : undefined
+          }
+          onRenderFramePost={
+            algorithmMode === 'bigclam'
+              ? (ctx) =>
+                  drawCommunityHulls({
+                    ctx,
+                    nodes: displayBigClamGraph.nodes,
+                    expandedCommunities,
+                    getRadius: getVisualHullRadius,
+                  })
+              : undefined
+          }
+          linkColor={
+            algorithmMode === 'bigclam'
+              ? (link: any) =>
+                  link.isInvisible
+                    ? 'rgba(0,0,0,0)'
+                    : link.isHidden
+                      ? '#ff4d4f'
+                      : 'rgba(255,255,255,0.3)'
+              : undefined
+          }
+          linkWidth={
+            algorithmMode === 'bigclam'
+              ? (link: any) =>
+                  link.isInvisible ? 0 : link.isHidden ? 2 : 1
+              : undefined
+          }
+          linkDirectionalParticles={
+            algorithmMode === 'bigclam'
+              ? (link: any) => (link.isHidden ? 3 : 0)
+              : undefined
+          }
           onNodeClick={(node) => {
-            setSelectedNode(node);
-            setRightOpen(true);
+            if (algorithmMode === 'bigclam') {
+              handleBigClamNodeClick(node);
+            } else {
+              setSelectedNode(node);
+              setRightOpen(true);
+            }
           }}
         />
-      ) : (
-        <main key="bigclam-graph" className="graph-viewport" ref={viewportRef}>
-          {loading && (
-            <div className="loading-overlay">
-              <span>Загрузка сообществ BigCLAM...</span>
-            </div>
-          )}
-          {viewportSize.w > 0 && viewportSize.h > 0 && (
-            <ForceGraph2D
-              ref={graphRef}
-              graphData={displayBigClamGraph}
-              width={viewportSize.w}
-              height={viewportSize.h}
-              nodeCanvasObject={bigClamNodeCanvasObject}
-              linkColor={(link: any) =>
-                link.isInvisible
-                  ? 'rgba(0,0,0,0)'
-                  : link.isHidden
-                    ? '#ff4d4f'
-                    : 'rgba(255,255,255,0.3)'
-              }
-              linkWidth={(link: any) =>
-                link.isInvisible ? 0 : link.isHidden ? 2 : 1
-              }
-              linkDirectionalParticles={(link: any) =>
-                link.isHidden ? 3 : 0
-              }
-              onNodeClick={handleBigClamNodeClick}
-              cooldownTicks={200}
-              warmupTicks={100}
-              onRenderFramePost={(ctx) => {
-                drawCommunityHulls({
-                  ctx,
-                  nodes: displayBigClamGraph.nodes,
-                  expandedCommunities,
-                  getRadius: getVisualHullRadius,
-                });
-              }}
-            />
-          )}
-        </main>
-      )}
+        {loading && (
+          <div className="graph-status graph-status-loading">
+            Сервер обрабатывает данные…
+          </div>
+        )}
+        {!loading && graphStatus === 'error' && (
+          <div className="graph-status graph-status-error">
+            Сервер не запущен или API недоступен
+          </div>
+        )}
+        {!loading && graphStatus === 'empty' && (
+          <div className="graph-status graph-status-empty">
+            Данные отсутствуют или ещё обрабатываются сервером
+          </div>
+        )}
+      </div>
 
       <InfoPanel
         selectedNode={selectedNode}

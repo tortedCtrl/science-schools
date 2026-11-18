@@ -17,10 +17,11 @@ class CommunityRepository {
       std::span<const domain::Membership> memberships,
       std::span<const domain::CommunityTopic> topics);
 
-  Result<std::vector<domain::CommunityTopic>> ListTopCommunityTopics(
+  Result<std::vector<domain::CommunitySummary>> ListCommunities(
       std::string_view algorithm);
 
-  Result<std::vector<domain::Membership>> ListBigClamMemberships();
+  Result<std::vector<domain::CommunityTopic>> ListCommunityTopics(
+      std::string_view algorithm, std::int32_t community_id);
 
   Result<std::int64_t> SaveBigClamResults(
       std::span<const domain::Membership> memberships,

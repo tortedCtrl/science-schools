@@ -1,5 +1,5 @@
 // src/components/InfoPanel/InfoPanel.tsx
-import type { CommunityTopicsResponse } from '../../hooks/backend';
+import type { CommunityTopic } from '../../hooks/backend';
 
 type InfoPanelNode = {
   id: string;
@@ -15,7 +15,7 @@ export interface InfoPanelProps {
   rightOpen: boolean;
   onToggleRight: () => void;
   showCommunityTopics: boolean;
-  communityTopics: CommunityTopicsResponse[];
+  communityTopics: CommunityTopic[];
   communityTopicsLoading: boolean;
   communityTopicsError: string | null;
 }
@@ -29,10 +29,6 @@ export function InfoPanel({
   communityTopicsLoading,
   communityTopicsError,
 }: InfoPanelProps) {
-  const selectedCommunityTopics = communityTopics.find(
-    (community) => community.community_id === selectedNode?.community_id
-  );
-
   return (
     <aside className={`sidebar info-panel ${rightOpen ? 'open' : 'closed'}`}>
       <button
@@ -77,7 +73,9 @@ export function InfoPanel({
             </p>
             <p>
               <strong>Категория:</strong>{' '}
-              {selectedNode.type === 'project'
+              {selectedNode.type === 'community'
+                ? 'Научное сообщество'
+                : selectedNode.type === 'project'
                 ? 'Организация / Проект'
                 : 'Ученый / Сотрудник'}
             </p>
@@ -100,11 +98,11 @@ export function InfoPanel({
               <p className="community-topics-error">{communityTopicsError}</p>
             ) : selectedNode?.community_id == null ? (
               <p className="placeholder-text">
-                Выберите ученого, чтобы посмотреть темы его научной школы.
+                Выберите ученого или сообщество, чтобы посмотреть его темы.
               </p>
-            ) : selectedCommunityTopics?.topics.length ? (
+            ) : communityTopics.length ? (
               <ol className="community-topic-list">
-                {selectedCommunityTopics.topics.map((topic, index) => (
+                {communityTopics.map((topic, index) => (
                   <li key={topic.topic_id}>
                     <span className="community-topic-rank">{index + 1}.</span>
                     <span className="community-topic-name">{topic.name}</span>

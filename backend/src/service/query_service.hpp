@@ -23,10 +23,10 @@ class QueryService {
   Result<std::string> ListAuthorsJson();
   Result<std::string> GetAuthorCardJson(std::int32_t author_id);
   Result<std::string> ListEdgesJson();
-  Result<std::string> GetGraphJson();
-  Result<std::string> ListBigClamMembershipsJson();
-  Result<std::string> ListCommunityTopicsJson(
-      std::string_view algorithm = "leiden");
+  Result<std::string> GetGraphJson(std::string_view algorithm = "leiden");
+  Result<std::string> ListCommunitiesJson(std::string_view algorithm);
+  Result<std::string> ListCommunityTopicsJson(std::string_view algorithm,
+                                              std::int32_t community_id);
 
  private:
   repository::AuthorRepository& authors_;

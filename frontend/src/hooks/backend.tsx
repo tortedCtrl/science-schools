@@ -10,12 +10,6 @@ export type CommunityTopic = {
     article_count: number;
 };
 
-export type CommunityTopicsResponse = {
-    run_id?: number;
-    community_id: number;
-    topics: CommunityTopic[];
-};
-
 export type DatabaseResponse = {
     community_id: number | null;
     id: number;
@@ -73,13 +67,14 @@ export function useDatabase(): () => Promise<GraphResponse> {
 }
 
 export function useCommunityTopics(
-    algorithm: 'leiden' | 'bigclam' = 'leiden'
-): () => Promise<CommunityTopicsResponse[]> {
+    algorithm: 'leiden' | 'bigclam',
+    communityId: number | null
+): () => Promise<CommunityTopic[]> {
     return useCallback(async () => {
-        const response = await api.get<CommunityTopicsResponse[]>(
-            '/communities/topics',
-            { params: { algorithm } }
+        if (communityId == null) return [];
+        const response = await api.get<CommunityTopic[]>(
+            `/communities/${algorithm}/${communityId}/topics`
         );
         return response.data;
-    }, [algorithm]);
+    }, [algorithm, communityId]);
 }

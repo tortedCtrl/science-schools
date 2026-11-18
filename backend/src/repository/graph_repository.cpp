@@ -72,7 +72,8 @@ Result<std::vector<domain::Edge>> GraphRepository::ListEdges() {
   }
 }
 
-Result<domain::GraphData> GraphRepository::GetGraph() {
+Result<domain::GraphData> GraphRepository::GetGraph(
+    std::string_view algorithm) {
   auto session = database_.Acquire();
   if (!session) {
     return std::unexpected(session.error());
@@ -80,22 +81,51 @@ Result<domain::GraphData> GraphRepository::GetGraph() {
 
   soci::session& sql = **session;
   try {
-    const std::string node_query = std::string(kWeightedDegreeCte) + R"sql(
-      SELECT a.id, a.name, ac.community_id, a.institution_name,
-             COALESCE(wd.weighted_degree, 0)
-      FROM authors a
-      LEFT JOIN author_communities ac
-        ON ac.author_id = a.id
-       AND ac.run_id = (SELECT MAX(id) FROM clustering_runs
-                        WHERE algorithm = 'leiden')
-      LEFT JOIN weighted_degrees wd ON wd.author_id = a.id
-      ORDER BY a.id
-    )sql";
+    const std::string algorithm_name{algorithm};
+    const std::string community_join =
+        algorithm == "leiden"
+            ? "LEFT JOIN author_communities ac "
+              "ON ac.author_id = a.id AND ac.run_id = "
+              "(SELECT id FROM clustering_runs WHERE algorithm = :algorithm "
+              "ORDER BY id DESC LIMIT 1) "
+            : "LEFT JOIN (SELECT NULL::INTEGER AS author_id, "
+              "NULL::INTEGER AS community_id) ac ON FALSE ";
+    const std::string node_query =
+        std::string(kWeightedDegreeCte) +
+        "SELECT a.id, a.name, ac.community_id, a.institution_name, "
+        "COALESCE(wd.weighted_degree, 0) "
+        "FROM authors a " +
+        community_join +
+        "LEFT JOIN weighted_degrees wd ON wd.author_id = a.id "
+        "ORDER BY a.id";
 
     domain::GraphData graph{};
-    const soci::rowset<soci::row> nodes = (sql.prepare << node_query);
-    for (const soci::row& row : nodes) {
-      graph.nodes.push_back(ReadNode(row));
+    if (algorithm == "leiden") {
+      const soci::rowset<soci::row> nodes =
+          (sql.prepare << node_query, soci::use(algorithm_name));
+      for (const soci::row& row : nodes) {
+        graph.nodes.push_back(ReadNode(row));
+      }
+    } else {
+      const soci::rowset<soci::row> nodes = (sql.prepare << node_query);
+      for (const soci::row& row : nodes) {
+        graph.nodes.push_back(ReadNode(row));
+      }
+    }
+
+    const soci::rowset<soci::row> memberships =
+        (sql.prepare << "SELECT run_id, author_id, community_id "
+                        "FROM author_communities "
+                        "WHERE run_id = (SELECT id FROM clustering_runs "
+                        "WHERE algorithm = :algorithm "
+                        "ORDER BY id DESC LIMIT 1) "
+                        "ORDER BY author_id, community_id",
+         soci::use(algorithm_name));
+    for (const soci::row& row : memberships) {
+      graph.memberships.push_back(
+          {.run_id = row.get<std::int64_t>(0),
+           .author_id = row.get<std::int32_t>(1),
+           .community_id = row.get<std::int32_t>(2)});
     }
 
     const soci::rowset<soci::row> edges =

@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <nlohmann/json.hpp>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -100,10 +101,16 @@ Result<std::string> QueryService::ListEdgesJson() {
   return result.dump();
 }
 
-Result<std::string> QueryService::GetGraphJson() {
-  auto graph = graph_.GetGraph();
+Result<std::string> QueryService::GetGraphJson(std::string_view algorithm) {
+  auto graph = graph_.GetGraph(algorithm);
   if (!graph) {
     return std::unexpected(graph.error());
+  }
+
+  std::unordered_map<std::int32_t, Json> memberships_by_author;
+  for (const domain::Membership& membership : graph->memberships) {
+    memberships_by_author[membership.author_id].push_back(
+        {{"community_id", membership.community_id}});
   }
 
   Json nodes = Json::array();
@@ -113,6 +120,10 @@ Result<std::string> QueryService::GetGraphJson() {
     node["name"] = author.name;
     node["community_id"] =
         author.community_id ? Json(*author.community_id) : Json(nullptr);
+    node["communities"] =
+        memberships_by_author.contains(author.id)
+            ? memberships_by_author.at(author.id)
+            : Json::array();
     node["institution_name"] = author.institution_name
                                    ? Json(*author.institution_name)
                                    : Json(nullptr);
@@ -126,47 +137,40 @@ Result<std::string> QueryService::GetGraphJson() {
   }
 
   Json result;
+  result["algorithm"] = algorithm;
   result["nodes"] = std::move(nodes);
   result["links"] = std::move(links);
   return result.dump();
 }
 
-Result<std::string> QueryService::ListBigClamMembershipsJson() {
-  auto memberships = communities_.ListBigClamMemberships();
-  if (!memberships) {
-    return std::unexpected(memberships.error());
+Result<std::string> QueryService::ListCommunitiesJson(
+    std::string_view algorithm) {
+  auto communities = communities_.ListCommunities(algorithm);
+  if (!communities) {
+    return std::unexpected(communities.error());
   }
 
   Json result = Json::array();
-  for (const domain::Membership& membership : *memberships) {
-    result.push_back({{"run_id", membership.run_id},
-                      {"author_id", membership.author_id},
-                      {"community_id", membership.community_id}});
+  for (const domain::CommunitySummary& community : *communities) {
+    result.push_back({{"community_id", community.community_id},
+                      {"member_count", community.member_count}});
   }
   return result.dump();
 }
 
 Result<std::string> QueryService::ListCommunityTopicsJson(
-    std::string_view algorithm) {
-  auto topics = communities_.ListTopCommunityTopics(algorithm);
+    std::string_view algorithm, std::int32_t community_id) {
+  auto topics = communities_.ListCommunityTopics(algorithm, community_id);
   if (!topics) {
     return std::unexpected(topics.error());
   }
 
   Json result = Json::array();
   for (const domain::CommunityTopic& topic : *topics) {
-    if (result.empty() ||
-        result.back()["community_id"].get<std::int32_t>() !=
-            topic.community_id) {
-      result.push_back({{"run_id", topic.run_id},
-                        {"community_id", topic.community_id},
-                        {"topics", Json::array()}});
-    }
-    result.back()["topics"].push_back(
-        {{"topic_id", topic.topic_id},
-         {"name", topic.topic_name},
-         {"weight", topic.weight},
-         {"article_count", topic.article_count}});
+    result.push_back({{"topic_id", topic.topic_id},
+                      {"name", topic.topic_name},
+                      {"weight", topic.weight},
+                      {"article_count", topic.article_count}});
   }
   return result.dump();
 }

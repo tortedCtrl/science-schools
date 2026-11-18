@@ -3,7 +3,7 @@ import * as d3 from 'd3-force';
 import {
   useCommunityTopics,
   useDatabase,
-  type CommunityTopicsResponse,
+  type CommunityTopic,
 } from './hooks/backend';
 import { useBclame } from './hooks/useBclame';
 import { useHierarchicalGraph } from './hooks/useHierarchicalGraph';
@@ -35,7 +35,6 @@ export default function App() {
 
   const [algorithmMode, setAlgorithmMode] =
     useState<AlgorithmMode>('leiden');
-  const fetchCommunityTopics = useCommunityTopics(algorithmMode);
 
   const [searchName, setSearchName] = useState('');
   const [showAll, setShowAll] = useState(true);
@@ -49,9 +48,7 @@ export default function App() {
   const [showHiddenLinks, setShowHiddenLinks] = useState(false);
   const [colorMode, setColorMode] = useState<ColorMode>('type');
   const [highlightCluster, setHighlightCluster] = useState(false);
-  const [communityTopics, setCommunityTopics] = useState<
-    CommunityTopicsResponse[]
-  >([]);
+  const [communityTopics, setCommunityTopics] = useState<CommunityTopic[]>([]);
   const [communityTopicsLoading, setCommunityTopicsLoading] = useState(false);
   const [communityTopicsError, setCommunityTopicsError] = useState<
     string | null
@@ -79,6 +76,15 @@ export default function App() {
   const [selectedNode, setSelectedNode] = useState<any>(null);
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
+
+  const selectedCommunityId =
+    typeof selectedNode?.community_id === 'number'
+      ? selectedNode.community_id
+      : null;
+  const fetchCommunityTopics = useCommunityTopics(
+    algorithmMode,
+    selectedCommunityId
+  );
 
   const viewportRef = useRef<HTMLDivElement>(null!);
   const graphRef = useRef<any>(null);
@@ -245,12 +251,16 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (!highlightCluster) return;
     communityTopicsRequestId.current += 1;
     const requestId = communityTopicsRequestId.current;
+    setCommunityTopics([]);
+    setCommunityTopicsError(null);
+    if (!highlightCluster || selectedCommunityId == null) {
+      setCommunityTopicsLoading(false);
+      return;
+    }
 
     setCommunityTopicsLoading(true);
-    setCommunityTopicsError(null);
     fetchCommunityTopics()
       .then((topics) => {
         if (requestId === communityTopicsRequestId.current) {
@@ -268,7 +278,12 @@ export default function App() {
           setCommunityTopicsLoading(false);
         }
       });
-  }, [algorithmMode, highlightCluster, fetchCommunityTopics]);
+  }, [
+    algorithmMode,
+    highlightCluster,
+    selectedCommunityId,
+    fetchCommunityTopics,
+  ]);
 
   const handleLeidenSearch = async (event?: React.FormEvent) => {
     if (event) event.preventDefault();
@@ -420,6 +435,12 @@ export default function App() {
   const handleBigClamNodeClick = (node: any) => {
     if (node.isCommunity) {
       const communityId = parseInt(node.id.split('-')[1], 10);
+      setSelectedNode({
+        ...node,
+        community_id: communityId,
+        type: 'community',
+      });
+      setRightOpen(true);
       setExpandedCommunities((previous) => {
         const next = new Set(previous);
         if (next.has(communityId)) next.delete(communityId);

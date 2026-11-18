@@ -122,8 +122,8 @@ Result<std::int64_t> CommunityRepository::SaveLeidenResults(
   }
 }
 
-Result<std::vector<domain::CommunityTopic>>
-CommunityRepository::ListTopCommunityTopics(std::string_view algorithm) {
+Result<std::vector<domain::CommunitySummary>>
+CommunityRepository::ListCommunities(std::string_view algorithm) {
   auto session = database_.Acquire();
   if (!session) {
     return std::unexpected(session.error());
@@ -133,33 +133,56 @@ CommunityRepository::ListTopCommunityTopics(std::string_view algorithm) {
   try {
     const std::string algorithm_name{algorithm};
     const soci::rowset<soci::row> rows =
-        (sql.prepare << "WITH latest_run AS ("
-                        "  SELECT id FROM clustering_runs "
-                        "  WHERE algorithm = :algorithm "
-                        "  ORDER BY id DESC LIMIT 1"
-                        "), ranked AS ("
-                        "  SELECT ct.run_id, ct.community_id, ct.topic_id, "
-                        "         ct.topic_name, ct.weight, ct.article_count, "
-                        "         ROW_NUMBER() OVER ("
-                        "           PARTITION BY ct.community_id "
-                        "           ORDER BY ct.weight DESC, ct.topic_id"
-                        "         ) AS topic_rank "
-                        "  FROM community_topics ct "
-                        "  JOIN latest_run lr ON lr.id = ct.run_id"
-                        ") "
-                        "SELECT run_id, community_id, topic_id, topic_name, "
-                        "       weight, article_count "
-                        "FROM ranked WHERE topic_rank <= 5 "
-                        "ORDER BY community_id, topic_rank",
+        (sql.prepare << "SELECT ac.community_id, "
+                        "COUNT(DISTINCT ac.author_id) "
+                        "FROM author_communities ac "
+                        "WHERE ac.run_id = (SELECT id FROM clustering_runs "
+                        "WHERE algorithm = :algorithm "
+                        "ORDER BY id DESC LIMIT 1) "
+                        "GROUP BY ac.community_id ORDER BY ac.community_id",
          soci::use(algorithm_name));
+    std::vector<domain::CommunitySummary> communities;
+    for (const soci::row& row : rows) {
+      communities.push_back(
+          {.community_id = row.get<std::int32_t>(0),
+           .member_count = row.get<std::int64_t>(1)});
+    }
+    return communities;
+  } catch (const std::exception& error) {
+    return MakeError(Errc::kDatabase, "list communities: {}",
+                     error.what());
+  }
+}
+
+Result<std::vector<domain::CommunityTopic>>
+CommunityRepository::ListCommunityTopics(std::string_view algorithm,
+                                         std::int32_t community_id) {
+  auto session = database_.Acquire();
+  if (!session) {
+    return std::unexpected(session.error());
+  }
+
+  soci::session& sql = **session;
+  try {
+    const std::string algorithm_name{algorithm};
+    const soci::rowset<soci::row> rows =
+        (sql.prepare << "SELECT ct.run_id, ct.community_id, ct.topic_id, "
+                        "ct.topic_name, ct.weight, ct.article_count "
+                        "FROM community_topics ct "
+                        "WHERE ct.community_id = :community_id "
+                        "AND ct.run_id = (SELECT id FROM clustering_runs "
+                        "WHERE algorithm = :algorithm "
+                        "ORDER BY id DESC LIMIT 1) "
+                        "ORDER BY ct.weight DESC, ct.topic_id LIMIT 5",
+         soci::use(community_id), soci::use(algorithm_name));
+    const auto algorithm_value =
+        algorithm_name == "bigclam"
+            ? domain::CommunityAlgorithm::kBigClam
+            : domain::CommunityAlgorithm::kLeiden;
     std::vector<domain::CommunityTopic> topics;
-    const auto algorithm =
-      algorithm_name == "bigclam"
-          ? domain::CommunityAlgorithm::kBigClam
-          : domain::CommunityAlgorithm::kLeiden;
     for (const soci::row& row : rows) {
       topics.push_back({.run_id = row.get<std::int64_t>(0),
-                        .algorithm = algorithm,
+                        .algorithm = algorithm_value,
                         .community_id = row.get<std::int32_t>(1),
                         .topic_id = row.get<std::string>(2),
                         .topic_name = row.get<std::string>(3),
@@ -168,34 +191,7 @@ CommunityRepository::ListTopCommunityTopics(std::string_view algorithm) {
     }
     return topics;
   } catch (const std::exception& error) {
-    return MakeError(Errc::kDatabase, "list top community topics: {}",
-                     error.what());
-  }
-}
-
-Result<std::vector<domain::Membership>>
-CommunityRepository::ListBigClamMemberships() {
-  auto session = database_.Acquire();
-  if (!session) {
-    return std::unexpected(session.error());
-  }
-  soci::session& sql = **session;
-  try {
-    const soci::rowset<soci::row> rows =
-        (sql.prepare << "SELECT run_id, author_id, community_id "
-                        "FROM author_communities "
-                        "WHERE run_id = (SELECT MAX(id) FROM clustering_runs "
-                        "                WHERE algorithm = 'bigclam') "
-                        "ORDER BY author_id, community_id");
-    std::vector<domain::Membership> memberships;
-    for (const soci::row& row : rows) {
-      memberships.push_back({.run_id = row.get<std::int64_t>(0),
-                             .author_id = row.get<std::int32_t>(1),
-                             .community_id = row.get<std::int32_t>(2)});
-    }
-    return memberships;
-  } catch (const std::exception& error) {
-    return MakeError(Errc::kDatabase, "list BigCLAM memberships: {}",
+    return MakeError(Errc::kDatabase, "list community topics: {}",
                      error.what());
   }
 }

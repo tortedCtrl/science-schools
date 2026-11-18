@@ -133,6 +133,7 @@
 #include "domain/dto/author_summary.hpp"
 #include "domain/dto/author_card.hpp"
 #include "domain/dto/graph_data.hpp"
+#include "domain/dto/community_summary.hpp"
 
 // Internal / Processing Models
 #include "domain/internal/work.hpp"

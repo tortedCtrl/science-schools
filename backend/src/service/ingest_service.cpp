@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <exception>
 #include <filesystem>
+#include <limits>
 #include <map>
 #include <mutex>
 #include <optional>
@@ -41,9 +42,15 @@ Result<std::vector<domain::Membership>> ComputeLeidenMemberships(
   std::vector<graph::CoauthorshipEdge> input_edges;
   input_edges.reserve(edges.size());
   for (const domain::Edge& edge : edges) {
+    if (edge.weight < 0 ||
+        edge.weight > std::numeric_limits<std::int32_t>::max()) {
+      return MakeError(Errc::kInvalidArgument,
+                       "edge weight {} is outside the Leiden range",
+                       edge.weight);
+    }
     input_edges.push_back({.source_id = static_cast<std::uint32_t>(edge.source),
                            .target_id = static_cast<std::uint32_t>(edge.target),
-                           .weight = edge.weight});
+                           .weight = static_cast<std::int32_t>(edge.weight)});
   }
 
   try {

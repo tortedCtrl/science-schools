@@ -163,7 +163,7 @@ GraphRepository::GetArticleTopicInputs() {
     std::map<std::string, std::unordered_set<std::string>> topics_by_article;
 
     for (const soci::row& row : rows) {
-      const std::string article_id = row.get<std::string>(0);
+      const auto article_id = row.get<std::string>(0);
       auto [input_it, inserted] = inputs_by_article.try_emplace(article_id);
       domain::ArticleTopicInput& input = input_it->second;
       if (inserted) {
@@ -172,12 +172,12 @@ GraphRepository::GetArticleTopicInputs() {
         input.article.year = row.get<std::int32_t>(2);
       }
 
-      const std::int32_t author_id = row.get<std::int32_t>(3);
+      const auto author_id = row.get<std::int32_t>(3);
       if (authors_by_article[article_id].insert(author_id).second) {
         input.author_ids.push_back(author_id);
       }
 
-      const std::string topic_id = row.get<std::string>(4);
+      const auto topic_id = row.get<std::string>(4);
       if (topics_by_article[article_id].insert(topic_id).second) {
         input.article.topics.push_back(
             {.topic_id = topic_id,

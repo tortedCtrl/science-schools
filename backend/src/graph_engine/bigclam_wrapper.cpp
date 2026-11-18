@@ -5,6 +5,7 @@
 #include <unistd.h>
 
 #include <cerrno>
+#include <array>
 #include <charconv>
 #include <cstdint>
 #include <cstdlib>
@@ -30,6 +31,8 @@ class TemporaryDirectory {
   TemporaryDirectory() = default;
   TemporaryDirectory(const TemporaryDirectory&) = delete;
   TemporaryDirectory& operator=(const TemporaryDirectory&) = delete;
+  TemporaryDirectory(TemporaryDirectory&&) = delete;
+  TemporaryDirectory& operator=(TemporaryDirectory&&) = delete;
   ~TemporaryDirectory() {
     if (!path_.empty()) {
       std::error_code ignored;
@@ -53,7 +56,7 @@ class TemporaryDirectory {
     return {};
   }
 
-  const fs::path& Path() const { return path_; }
+  [[nodiscard]] const fs::path& Path() const { return path_; }
 
  private:
   fs::path path_;
@@ -63,29 +66,31 @@ Status RunExecutable(const fs::path& binary, const fs::path& edges,
                      const fs::path& labels, const fs::path& prefix,
                      int communities, int threads) {
   // No shell is involved: arguments cannot be interpreted as shell commands.
-  const std::string executable = binary.string();
-  const std::string input_arg = "-i:" + edges.string();
-  const std::string label_arg = "-l:" + labels.string();
-  const std::string output_arg = "-o:" + prefix.string();
-  const std::string community_arg = "-c:" + std::to_string(communities);
-  const std::string threads_arg = "-nt:" + std::to_string(threads);
+  std::string executable = binary.string();
+  std::string input_arg = "-i:" + edges.string();
+  std::string label_arg = "-l:" + labels.string();
+  std::string output_arg = "-o:" + prefix.string();
+  std::string community_arg = "-c:" + std::to_string(communities);
+  std::string threads_arg = "-nt:" + std::to_string(threads);
+  std::array<char*, 7> arguments{
+      executable.data(), input_arg.data(),
+      label_arg.data(), output_arg.data(), community_arg.data(),
+      threads_arg.data(), nullptr};
 
   const pid_t child = fork();
   if (child < 0) {
     return MakeError(Errc::kInternal, "fork BigCLAM: errno {}", errno);
   }
   if (child == 0) {
-    execl(executable.c_str(), executable.c_str(), input_arg.c_str(),
-          label_arg.c_str(), output_arg.c_str(), community_arg.c_str(),
-          threads_arg.c_str(), static_cast<char*>(nullptr));
+    execv(executable.c_str(), arguments.data());
     _exit(127);
   }
 
   int status = 0;
-  pid_t waited;
-  do {
+  pid_t waited = 0;
+  while (waited == 0 || (waited == -1 && errno == EINTR)) {
     waited = waitpid(child, &status, 0);
-  } while (waited == -1 && errno == EINTR);
+  }
   if (waited == -1) {
     return MakeError(Errc::kInternal, "wait for BigCLAM: errno {}", errno);
   }

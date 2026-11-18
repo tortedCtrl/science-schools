@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <exception>
+#include <limits>
 #include <span>
 #include <string>
 #include <vector>
@@ -52,7 +53,7 @@ void InsertAuthors(soci::session& sql,
   }
 }
 
-void InsertEdges(soci::session& sql, std::span<const domain::Edge> edges) {
+Status InsertEdges(soci::session& sql, std::span<const domain::Edge> edges) {
   std::vector<std::int32_t> sources;
   std::vector<std::int32_t> targets;
   std::vector<std::int32_t> weights;
@@ -60,9 +61,15 @@ void InsertEdges(soci::session& sql, std::span<const domain::Edge> edges) {
   targets.reserve(edges.size());
   weights.reserve(edges.size());
   for (const domain::Edge& edge : edges) {
+    if (edge.weight < 0 ||
+        edge.weight > std::numeric_limits<std::int32_t>::max()) {
+      return MakeError(Errc::kInvalidArgument,
+                       "edge weight {} is outside the database range",
+                       edge.weight);
+    }
     sources.push_back(edge.source);
     targets.push_back(edge.target);
-    weights.push_back(edge.weight);
+    weights.push_back(static_cast<std::int32_t>(edge.weight));
   }
 
   for (std::size_t offset = 0; offset < sources.size();
@@ -80,6 +87,7 @@ void InsertEdges(soci::session& sql, std::span<const domain::Edge> edges) {
          soci::use(weight_chunk));
     statement.execute(true);
   }
+  return {};
 }
 
 void InsertArticles(soci::session& sql,
@@ -245,7 +253,10 @@ Status IngestRepository::SaveGraph(
   try {
     soci::transaction transaction(sql);
     InsertAuthors(sql, authors);
-    InsertEdges(sql, edges);
+    auto edges_inserted = InsertEdges(sql, edges);
+    if (!edges_inserted) {
+      return std::unexpected(edges_inserted.error());
+    }
     InsertArticles(sql, articles);
     InsertArticleTopics(sql, articles);
     InsertAuthorArticles(sql, links);

@@ -128,6 +128,12 @@ Result<Config> Config::FromEnv() {
         EnvInt("INGEST_CONCURRENCY", config.ingest_concurrency, 1, 64));
   Apply(error, config.ingest_on_start,
         EnvBool("INGEST_ON_START", config.ingest_on_start));
+  config.bigclam_binary =
+      EnvString("BIGCLAM_BINARY", config.bigclam_binary);
+  Apply(error, config.bigclam_communities,
+        EnvInt("BIGCLAM_COMMUNITIES", config.bigclam_communities, 1, 100000));
+  Apply(error, config.bigclam_threads,
+        EnvInt("BIGCLAM_THREADS", config.bigclam_threads, 1, 256));
 
   Apply(error, config.openalex_rps,
         EnvDouble("OPENALEX_RPS", config.openalex_rps, 0.1, 100.0));

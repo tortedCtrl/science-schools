@@ -20,7 +20,6 @@ target_sources(
     service/community_topic_aggregator.cpp
     service/query_service.cpp
     graph_engine/bigclam_wrapper.cpp
-    graph_engine/leiden_wrapper.cpp
 )
 
 target_include_directories(

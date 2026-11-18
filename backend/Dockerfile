@@ -55,12 +55,10 @@ RUN --mount=type=cache,target=/root/.ccache \
 FROM gcr.io/distroless/cc-debian12 AS runtime
 
 COPY --from=builder /tmp/libgomp.so.1 /usr/lib/x86_64-linux-gnu/
+COPY --from=builder /opt/snap/examples/bigclam/bigclam /usr/local/bin/bigclam
 
 USER nonroot
 
 COPY --from=builder /src/build/apps/server/backend_server /usr/local/bin/backend_server
 
 ENTRYPOINT ["/usr/local/bin/backend_server"]
-
-COPY --from=builder /src/build/bigclam/bigclam_runner /usr/local/bin/bigclam_runner
-COPY --from=builder /opt/snap/examples/bigclam/bigclam /usr/local/bin/bigclam

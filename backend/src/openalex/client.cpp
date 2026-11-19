@@ -162,7 +162,7 @@ Result<std::vector<domain::Work>> OpenAlexClient::FetchWorksPage(
   const std::string url =
       options_.base_url +
       "/works?filter=authorships.author.id:" + UrlEncode(filter) +
-      "&select=id,title,publication_year,authorships&per_page=" +
+      "&select=id,title,publication_year,authorships,topics,primary_topic&per_page=" +
       std::to_string(per_page) + "&page=" + std::to_string(page) +
       BuildQuerySuffix(options_);
   auto body = Get(url);

@@ -1,0 +1,5 @@
+add_executable(bigclam_runner main.cpp)
+target_link_libraries(bigclam_runner PRIVATE backend_core)
+if(STATIC_RUNTIME AND NOT MSVC)
+    target_link_options(bigclam_runner PRIVATE -static-libstdc++ -static-libgcc)
+endif()

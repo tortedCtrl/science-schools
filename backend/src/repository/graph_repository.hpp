@@ -14,6 +14,7 @@ class GraphRepository {
 
   Result<std::vector<domain::Edge>> ListEdges();
   Result<domain::GraphData> GetGraph();
+  Result<std::vector<domain::ArticleTopicInput>> GetArticleTopicInputs();
 
  private:
   Database& database_;

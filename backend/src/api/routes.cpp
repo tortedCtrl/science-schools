@@ -71,6 +71,10 @@ void RegisterRoutes(httplib::Server& server, service::QueryService& query) {
                  [](const httplib::Request&, httplib::Response& response) {
                    response.status = 204;
                  });
+  server.Options("/communities/topics",
+                 [](const httplib::Request&, httplib::Response& response) {
+                   response.status = 204;
+                 });
 
   server.Get("/authors",
              [&query](const httplib::Request&, httplib::Response& response) {
@@ -99,6 +103,25 @@ void RegisterRoutes(httplib::Server& server, service::QueryService& query) {
   server.Get("/graph",
              [&query](const httplib::Request&, httplib::Response& response) {
                SendBody(response, query.GetGraphJson());
+             });
+  server.Get("/communities/bigclam", 
+            [&query](const httplib::Request&,  httplib::Response& response) {
+                SendBody(response, query.ListBigClamMembershipsJson());
+            });
+  server.Get("/communities/topics",
+             [&query](const httplib::Request& request,
+                      httplib::Response& response) {
+               const std::string algorithm =
+                   request.has_param("algorithm")
+                       ? request.get_param_value("algorithm")
+                       : "leiden";
+               if (algorithm != "leiden" && algorithm != "bigclam") {
+                 SendJson(response,
+                          R"({"error":"algorithm must be leiden or bigclam"})",
+                          400);
+                 return;
+               }
+               SendBody(response, query.ListCommunityTopicsJson(algorithm));
              });
 }
 

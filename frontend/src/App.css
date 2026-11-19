@@ -338,6 +338,43 @@
   text-align: left;
 }
 
+.community-topics-error {
+  color: #d64545;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.community-topic-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding-left: 24px;
+}
+
+.community-topic-list li {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: baseline;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.community-topic-rank {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.community-topic-name {
+  overflow-wrap: anywhere;
+}
+
+.community-topic-weight {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
 /* ===================== Граф ===================== */
 .graph-viewport {
   flex: 1 1 auto;

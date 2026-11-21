@@ -137,9 +137,9 @@ Result<std::vector<domain::Author>> IngestService::LoadAuthors() {
         if (!result) {
           const Error& fetch_error = result.error();
           record_error(Error{
-              fetch_error.code,
-              fmt::format("OpenAlex author page {} failed: {}", page + 1,
-                          fetch_error.message)});
+              .code = fetch_error.code,
+              .message = fmt::format("OpenAlex author page {} failed: {}",
+                                     page + 1, fetch_error.message)});
           return;
         }
         pages[static_cast<std::size_t>(page)] = std::move(*result);
@@ -244,10 +244,10 @@ Result<std::vector<domain::Work>> IngestService::LoadWorks(
           if (!page_works) {
             const Error& fetch_error = page_works.error();
             record_error(Error{
-                fetch_error.code,
-                fmt::format("OpenAlex works batch {}/{} page {} failed: {}",
-                            batch + 1, batches.size(), page,
-                            fetch_error.message)});
+                .code = fetch_error.code,
+                .message = fmt::format(
+                    "OpenAlex works batch {}/{} page {} failed: {}",
+                    batch + 1, batches.size(), page, fetch_error.message)});
             return;
           }
 

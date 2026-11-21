@@ -10,35 +10,47 @@ export type CommunityTopic = {
     article_count: number;
 };
 
-export type DatabaseResponse = {
-    community_id: number | null;
-    id: number;
-    institution_name: string;
+export type ApiGraphNode = {
+    id: string;
     name: string;
-    openalex_id: string;
+    community_id: number | null;
+    communities: { community_id: number }[];
+    institution_name: string | null;
+    weighted_degree: number;
 };
 
-type ApiGraphNode = {
-    id: number | string;
-    name?: string;
-    community_id?: number | null;
-    communities?: ({ community_id: number } | number)[] | null;
-    institution_name?: string | null;
+export type ApiGraphLink = {
+    source: string;
+    target: string;
+    weight: number;
 };
 
-type ApiGraphLink = {
-    source: number | string;
-    target: number | string;
-};
-
-type ApiGraphResponse = {
+export type ApiGraphResponse = {
+    algorithm: 'leiden' | 'bigclam';
     nodes: ApiGraphNode[] | null;
     links: ApiGraphLink[] | null;
 };
 
+export type GraphNode = {
+    id: string;
+    name: string;
+    community_id: number | null;
+    type: 'person';
+    location: 'RU' | 'INT';
+    info?: string;
+    val: number;
+};
+
+export type GraphLink = {
+    source: string;
+    target: string;
+    weight?: number;
+    isHidden: boolean;
+};
+
 export type GraphResponse = {
-    nodes: Record<string, unknown>[];
-    links: { source: string; target: string; isHidden: boolean }[];
+    nodes: GraphNode[];
+    links: GraphLink[];
     memberships: Map<string, number[]>;
 };
 
@@ -59,27 +71,14 @@ export function useGraph(
             .filter(
                 (node): node is ApiGraphNode =>
                     !!node &&
-                    (typeof node.id === 'number' || typeof node.id === 'string')
+                    typeof node.id === 'string'
             )
-            .map((node) => {
-                const id = String(node.id);
-                const communityIds = Array.isArray(node.communities)
-                    ? node.communities
-                          .map((community) =>
-                              typeof community === 'number'
-                                  ? community
-                                  : community?.community_id
-                          )
-                          .filter(
-                              (communityId): communityId is number =>
-                                  Number.isInteger(communityId)
-                          )
-                    : [];
-                if (
-                    communityIds.length === 0 &&
-                    typeof node.community_id === 'number' &&
-                    Number.isInteger(node.community_id)
-                ) {
+            .map((node): GraphNode => {
+                const id = node.id;
+                const communityIds = node.communities
+                    .map((community) => community.community_id)
+                    .filter(Number.isInteger);
+                if (communityIds.length === 0 && node.community_id !== null) {
                     communityIds.push(node.community_id);
                 }
                 if (communityIds.length > 0) {
@@ -87,7 +86,7 @@ export function useGraph(
                 }
                 return {
                     id,
-                    name: typeof node.name === 'string' ? node.name : `Автор ${id}`,
+                    name: node.name,
                     community_id: communityIds[0] ?? null,
                     type: 'person' as const,
                     location: (node.institution_name ? 'RU' : 'INT') as 'RU' | 'INT',
@@ -96,18 +95,17 @@ export function useGraph(
                 };
             });
 
-        const links = data.links
+        const links: GraphLink[] = data.links
             .filter(
                 (link): link is ApiGraphLink =>
                     !!link &&
-                    (typeof link.source === 'number' ||
-                        typeof link.source === 'string') &&
-                    (typeof link.target === 'number' ||
-                        typeof link.target === 'string')
+                    typeof link.source === 'string' &&
+                    typeof link.target === 'string'
             )
             .map((link) => ({
-                source: String(link.source),
-                target: String(link.target),
+                source: link.source,
+                target: link.target,
+                weight: link.weight,
                 isHidden: false,
             }));
         return { nodes, links, memberships };

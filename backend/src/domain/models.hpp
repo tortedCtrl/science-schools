@@ -134,6 +134,7 @@
 #include "domain/dto/author_card.hpp"
 #include "domain/dto/graph_data.hpp"
 #include "domain/dto/community_summary.hpp"
+#include "domain/dto/api_response.hpp"
 
 // Internal / Processing Models
 #include "domain/internal/work.hpp"

@@ -37,9 +37,9 @@ VCPKG_ROOT=/home/ВАШ_ПОЛЬЗОВАТЕЛЬ_WSL/vcpkg
    ```bash
    make run
    ```
-   *Команда выполнит инкрементальную пересборку и запустит backend. При включённом
-   `INGEST_ON_START` он загрузит данные и последовательно рассчитает Leiden и
-   BigCLAM.*
+   *Команда выполнит инкрементальную пересборку и запустит backend. При
+   `download_authors: true` он загрузит данные OpenAlex и запустит Leiden и
+   BigCLAM; при `false` повторно рассчитает сообщества по уже сохранённым данным.*
 
 3. **Очистка артефактов сборки:**
    ```bash
@@ -85,7 +85,13 @@ frontend (из директории frontend):
 сообщества и `0.01` для остальных. Поэтому статьи с авторами из нескольких
 сообществ дают ненулевой вклад каждому из них. При ingest-е backend запускает
 эту агрегацию отдельно для Leiden и BigCLAM; результаты обоих алгоритмов
-хранятся отдельно. Для SNAP BigCLAM можно настроить `BIGCLAM_BINARY`
-(по умолчанию `/usr/local/bin/bigclam`), `BIGCLAM_COMMUNITIES` (по умолчанию
-`10`) и `BIGCLAM_THREADS` (по умолчанию `1`). `run_id`
+хранятся отдельно. Параметры backend и алгоритмов, включая `bigclam_binary`,
+`bigclam_communities`, `bigclam_threads` и `download_authors`, задаются в
+[backend/config.json](./backend/config.json). При `download_authors: false`
+backend не обращается к OpenAlex и повторно запускает алгоритмы по графу и
+темам, уже сохранённым в PostgreSQL. Путь к файлу можно переопределить через
+`CONFIG_PATH`. Строка подключения и необязательные
+`OPENALEX_MAILTO`/`OPENALEX_API_KEY` остаются переменными окружения.
+`BACKEND_HOST`, `BACKEND_PORT`, `FRONTEND_PORT`, `DB_POOL_SIZE` и `LOG_LEVEL`
+также могут переопределять соответствующие значения из JSON. `run_id`
 используется только внутри backend и не является частью HTTP API.

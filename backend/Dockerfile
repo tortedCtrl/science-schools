@@ -60,5 +60,7 @@ COPY --from=builder /opt/snap/examples/bigclam/bigclam /usr/local/bin/bigclam
 USER nonroot
 
 COPY --from=builder /src/build/apps/server/backend_server /usr/local/bin/backend_server
+COPY --from=builder /src/config.json /etc/science-schools/config.json
+ENV CONFIG_PATH=/etc/science-schools/config.json
 
 ENTRYPOINT ["/usr/local/bin/backend_server"]

@@ -12,6 +12,7 @@ struct Config {
   std::string db_connection;
   int db_pool_size;
 
+  // spdlog threshold: trace, debug, info, warning, error, critical, or off.
   std::string log_level;
 
   std::string backend_host;

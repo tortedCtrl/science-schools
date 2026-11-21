@@ -43,6 +43,15 @@ void ValidateRange(int value, const char* name, int min_value, int max_value) {
   }
 }
 
+void ValidateLogLevel(const std::string& value) {
+  if (value != "trace" && value != "debug" && value != "info" &&
+      value != "warning" && value != "warn" && value != "error" &&
+      value != "err" && value != "critical" && value != "off") {
+    throw std::invalid_argument(
+        fmt::format("unsupported log_level: {}", value));
+  }
+}
+
 void OverrideStringFromEnv(std::string& value, const char* name) {
   const char* env_value = std::getenv(name);
   if (env_value != nullptr && *env_value != '\0') {
@@ -132,6 +141,7 @@ Result<Config> Config::Load() {
 
     ValidateRange(config.db_pool_size, "db_pool_size", 1, 128);
     ValidateRange(config.backend_port, "backend_port", 1, 65535);
+    ValidateLogLevel(config.log_level);
     ValidateRange(config.ingest_max_authors, "ingest_max_authors", 1, 100000);
     ValidateRange(config.ingest_author_page_size, "ingest_author_page_size", 1,
                   200);

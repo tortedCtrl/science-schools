@@ -32,6 +32,8 @@ int main() {
 
   spdlog::set_level(spdlog::level::from_str(config->log_level));
   spdlog::set_pattern("%Y-%m-%d %H:%M:%S.%e [%^%l%$] [t%t] %v");
+  spdlog::info("Configuration: download_authors={}, max_authors={}",
+               config->download_authors, config->ingest_max_authors);
 
   spdlog::info("Connecting to PostgreSQL");
   schools::repository::Database database;

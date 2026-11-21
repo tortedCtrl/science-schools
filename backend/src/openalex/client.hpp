@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -40,7 +41,9 @@ class OpenAlexClient {
       int per_page);
 
  private:
-  [[nodiscard]] Result<std::string> Get(std::string_view url);
+  [[nodiscard]] Status Get(
+      std::string_view url,
+      const std::function<Status(std::string_view)>& consume_response);
   [[nodiscard]] Result<Response> Perform(std::string_view url) const;
 
   ClientOptions options_;

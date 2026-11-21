@@ -4,8 +4,10 @@
 
 #include <cstdint>
 #include <exception>
+#include <map>
 #include <string>
 #include <string_view>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -70,7 +72,8 @@ Result<std::vector<domain::Edge>> GraphRepository::ListEdges() {
   }
 }
 
-Result<domain::GraphData> GraphRepository::GetGraph() {
+Result<domain::GraphData> GraphRepository::GetGraph(
+    std::string_view algorithm) {
   auto session = database_.Acquire();
   if (!session) {
     return std::unexpected(session.error());
@@ -78,19 +81,51 @@ Result<domain::GraphData> GraphRepository::GetGraph() {
 
   soci::session& sql = **session;
   try {
-    const std::string node_query = std::string(kWeightedDegreeCte) + R"sql(
-      SELECT a.id, a.name, ac.community_id, a.institution_name,
-             COALESCE(wd.weighted_degree, 0)
-      FROM authors a
-      LEFT JOIN author_communities ac ON ac.author_id = a.id
-      LEFT JOIN weighted_degrees wd ON wd.author_id = a.id
-      ORDER BY a.id
-    )sql";
+    const std::string algorithm_name{algorithm};
+    const std::string community_join =
+        algorithm == "leiden"
+            ? "LEFT JOIN author_communities ac "
+              "ON ac.author_id = a.id AND ac.run_id = "
+              "(SELECT id FROM clustering_runs WHERE algorithm = :algorithm "
+              "ORDER BY id DESC LIMIT 1) "
+            : "LEFT JOIN (SELECT NULL::INTEGER AS author_id, "
+              "NULL::INTEGER AS community_id) ac ON FALSE ";
+    const std::string node_query =
+        std::string(kWeightedDegreeCte) +
+        "SELECT a.id, a.name, ac.community_id, a.institution_name, "
+        "COALESCE(wd.weighted_degree, 0) "
+        "FROM authors a " +
+        community_join +
+        "LEFT JOIN weighted_degrees wd ON wd.author_id = a.id "
+        "ORDER BY a.id";
 
     domain::GraphData graph{};
-    const soci::rowset<soci::row> nodes = (sql.prepare << node_query);
-    for (const soci::row& row : nodes) {
-      graph.nodes.push_back(ReadNode(row));
+    if (algorithm == "leiden") {
+      const soci::rowset<soci::row> nodes =
+          (sql.prepare << node_query, soci::use(algorithm_name));
+      for (const soci::row& row : nodes) {
+        graph.nodes.push_back(ReadNode(row));
+      }
+    } else {
+      const soci::rowset<soci::row> nodes = (sql.prepare << node_query);
+      for (const soci::row& row : nodes) {
+        graph.nodes.push_back(ReadNode(row));
+      }
+    }
+
+    const soci::rowset<soci::row> memberships =
+        (sql.prepare << "SELECT run_id, author_id, community_id "
+                        "FROM author_communities "
+                        "WHERE run_id = (SELECT id FROM clustering_runs "
+                        "WHERE algorithm = :algorithm "
+                        "ORDER BY id DESC LIMIT 1) "
+                        "ORDER BY author_id, community_id",
+         soci::use(algorithm_name));
+    for (const soci::row& row : memberships) {
+      graph.memberships.push_back(
+          {.run_id = row.get<std::int64_t>(0),
+           .author_id = row.get<std::int32_t>(1),
+           .community_id = row.get<std::int32_t>(2)});
     }
 
     const soci::rowset<soci::row> edges =
@@ -103,6 +138,64 @@ Result<domain::GraphData> GraphRepository::GetGraph() {
     return graph;
   } catch (const std::exception& error) {
     return MakeError(Errc::kDatabase, "load graph: {}", error.what());
+  }
+}
+
+Result<std::vector<domain::ArticleTopicInput>>
+GraphRepository::GetArticleTopicInputs() {
+  auto session = database_.Acquire();
+  if (!session) {
+    return std::unexpected(session.error());
+  }
+
+  soci::session& sql = **session;
+  try {
+    const soci::rowset<soci::row> rows =
+        (sql.prepare << "SELECT art.id, art.title, COALESCE(art.year, 0), "
+                        "ata.author_id, topic.topic_id, topic.topic_name, "
+                        "topic.score "
+                        "FROM author_meta_articles art "
+                        "JOIN author_to_article ata ON ata.article_id = art.id "
+                        "JOIN article_topics topic ON topic.article_id = art.id "
+                        "ORDER BY art.id, ata.author_id, topic.topic_id");
+    std::map<std::string, domain::ArticleTopicInput> inputs_by_article;
+    std::map<std::string, std::unordered_set<std::int32_t>> authors_by_article;
+    std::map<std::string, std::unordered_set<std::string>> topics_by_article;
+
+    for (const soci::row& row : rows) {
+      const auto article_id = row.get<std::string>(0);
+      auto [input_it, inserted] = inputs_by_article.try_emplace(article_id);
+      domain::ArticleTopicInput& input = input_it->second;
+      if (inserted) {
+        input.article.openalex_id = article_id;
+        input.article.title = row.get<std::string>(1);
+        input.article.year = row.get<std::int32_t>(2);
+      }
+
+      const auto author_id = row.get<std::int32_t>(3);
+      if (authors_by_article[article_id].insert(author_id).second) {
+        input.author_ids.push_back(author_id);
+      }
+
+      const auto topic_id = row.get<std::string>(4);
+      if (topics_by_article[article_id].insert(topic_id).second) {
+        input.article.topics.push_back(
+            {.topic_id = topic_id,
+             .name = row.get<std::string>(5),
+             .score = row.get<double>(6)});
+      }
+    }
+
+    std::vector<domain::ArticleTopicInput> inputs;
+    inputs.reserve(inputs_by_article.size());
+    for (auto& [article_id, input] : inputs_by_article) {
+      (void)article_id;
+      inputs.push_back(std::move(input));
+    }
+    return inputs;
+  } catch (const std::exception& error) {
+    return MakeError(Errc::kDatabase, "load article topic inputs: {}",
+                     error.what());
   }
 }
 

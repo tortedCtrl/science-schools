@@ -35,7 +35,9 @@ RUN --mount=type=cache,target=/root/.cache/vcpkg \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
 
-
+RUN git clone --depth 1 https://github.com/snap-stanford/snap.git /opt/snap \
+    && make -C /opt/snap/examples/bigclam -j4 \
+        LDFLAGS="-static-libstdc++ -static-libgcc"
 # Сборка кода
 COPY . .
 
@@ -53,6 +55,7 @@ RUN --mount=type=cache,target=/root/.ccache \
 FROM gcr.io/distroless/cc-debian12 AS runtime
 
 COPY --from=builder /tmp/libgomp.so.1 /usr/lib/x86_64-linux-gnu/
+COPY --from=builder /opt/snap/examples/bigclam/bigclam /usr/local/bin/bigclam
 
 USER nonroot
 

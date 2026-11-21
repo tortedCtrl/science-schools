@@ -18,6 +18,8 @@ export function SearchPanel({
   setColorMode,
   highlightCluster,
   onToggleHighlightCluster,
+  algorithmMode,
+  onAlgorithmModeChange,
   leftOpen,
   onToggleLeft,
 }: SearchPanelProps) {
@@ -48,6 +50,29 @@ export function SearchPanel({
 
       <div className="sidebar-content">
         <h2>Поиск и Аналитика</h2>
+        <div className="form-group">
+          <label>Алгоритм сообществ:</label>
+          <div className="radio-group">
+            <button
+              type="button"
+              className={`btn-toggle ${
+                algorithmMode === 'leiden' ? 'active' : ''
+              }`}
+              onClick={() => onAlgorithmModeChange('leiden')}
+            >
+              Leiden
+            </button>
+            <button
+              type="button"
+              className={`btn-toggle ${
+                algorithmMode === 'bigclam' ? 'active' : ''
+              }`}
+              onClick={() => onAlgorithmModeChange('bigclam')}
+            >
+              BigCLAM
+            </button>
+          </div>
+        </div>
         <form onSubmit={onSubmit}>
           <div className="form-group">
             <label>Имя или ID объекта:</label>

@@ -27,6 +27,9 @@ struct Config {
   int ingest_work_batch_size{10};
   int ingest_concurrency{4};
   bool ingest_on_start{true};
+  std::string bigclam_binary{"/usr/local/bin/bigclam"};
+  int bigclam_communities{10};
+  int bigclam_threads{1};
 
   double openalex_rps{8.0};
   int openalex_max_retries{5};

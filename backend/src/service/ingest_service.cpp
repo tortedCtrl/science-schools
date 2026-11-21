@@ -84,10 +84,12 @@ Result<std::vector<domain::Membership>> ComputeBigClamMemberships(
 
 IngestService::IngestService(const Config& config,
                              repository::IngestRepository& repository,
-                             repository::CommunityRepository& communities)
+                             repository::CommunityRepository& communities,
+                             repository::GraphRepository& graph)
     : config_{config},
       repository_{repository},
       communities_{communities},
+      graph_{graph},
       limiter_{config.openalex_rps} {}
 
 openalex::ClientOptions IngestService::ClientOptions() const {
@@ -362,6 +364,43 @@ Result<domain::IngestResult> IngestService::Run() {
     return std::unexpected(saved.error());
   }
 
+  domain::IngestResult result{};
+  result.authors = stored_authors.size();
+  result.works = works->size();
+  result.edges = edges.size();
+  result.articles = articles.size();
+  return RunAlgorithms(edges, topic_inputs, result);
+}
+
+Result<domain::IngestResult> IngestService::RunFromDatabase() {
+  auto edges = graph_.ListEdges();
+  if (!edges) {
+    return std::unexpected(edges.error());
+  }
+
+  auto topic_inputs = graph_.GetArticleTopicInputs();
+  if (!topic_inputs) {
+    return std::unexpected(topic_inputs.error());
+  }
+
+  std::unordered_set<std::int32_t> author_ids;
+  for (const domain::Edge& edge : *edges) {
+    author_ids.insert(edge.source);
+    author_ids.insert(edge.target);
+  }
+
+  domain::IngestResult result{};
+  result.authors = author_ids.size();
+  result.works = topic_inputs->size();
+  result.edges = edges->size();
+  result.articles = topic_inputs->size();
+  return RunAlgorithms(*edges, *topic_inputs, result);
+}
+
+Result<domain::IngestResult> IngestService::RunAlgorithms(
+    std::span<const domain::Edge> edges,
+    std::span<const domain::ArticleTopicInput> topic_inputs,
+    domain::IngestResult result) {
   spdlog::info("Ingest: running Leiden on {} edges", edges.size());
   auto memberships = ComputeLeidenMemberships(edges);
   if (!memberships) {
@@ -392,11 +431,6 @@ Result<domain::IngestResult> IngestService::Run() {
     return std::unexpected(bigclam_saved.error());
   }
 
-  domain::IngestResult result{};
-  result.authors = stored_authors.size();
-  result.works = works->size();
-  result.edges = edges.size();
-  result.articles = articles.size();
   result.communities = memberships->size();
   spdlog::info(
       "Ingest: saved Leiden run {} ({} memberships) and BigCLAM run {} "

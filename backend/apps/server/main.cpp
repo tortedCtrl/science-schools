@@ -24,7 +24,7 @@ void SetCorsHeaders(httplib::Response& response) {
 }  // namespace
 
 int main() {
-  auto config = schools::Config::FromEnv();
+  auto config = schools::Config::Load();
   if (!config) {
     spdlog::error("Invalid configuration: {}", config.error().message);
     return 2;
@@ -32,6 +32,8 @@ int main() {
 
   spdlog::set_level(spdlog::level::from_str(config->log_level));
   spdlog::set_pattern("%Y-%m-%d %H:%M:%S.%e [%^%l%$] [t%t] %v");
+  spdlog::info("Configuration: download_authors={}, max_authors={}",
+               config->download_authors, config->ingest_max_authors);
 
   spdlog::info("Connecting to PostgreSQL");
   schools::repository::Database database;
@@ -49,21 +51,18 @@ int main() {
 
   schools::repository::AuthorRepository author_repository(database);
   schools::repository::GraphRepository graph_repository(database);
-  schools::service::QueryService query_service(author_repository,
-                                               graph_repository);
+  schools::repository::CommunityRepository community_repository(database);
+  schools::service::QueryService query_service(
+    author_repository, graph_repository, community_repository);
 
-  if (config->ingest_on_start) {
-    schools::repository::IngestRepository ingest_repository(database);
-    schools::repository::CommunityRepository community_repository(database);
-    schools::service::IngestService ingest_service(*config, ingest_repository,
-                                                   community_repository);
-    auto ingested = ingest_service.Run();
-    if (!ingested) {
-      spdlog::error("{}", ingested.error().message);
-      return 1;
-    }
-  } else {
-    spdlog::info("INGEST_ON_START=false: using existing database contents");
+  schools::repository::IngestRepository ingest_repository(database);
+  schools::service::IngestService ingest_service(
+      *config, ingest_repository, community_repository, graph_repository);
+  auto ingested = config->download_authors ? ingest_service.Run()
+                                           : ingest_service.RunFromDatabase();
+  if (!ingested) {
+    spdlog::error("{}", ingested.error().message);
+    return 1;
   }
 
   httplib::Server server;

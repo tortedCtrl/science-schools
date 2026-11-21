@@ -1,54 +1,126 @@
+// src/hooks/backend.tsx
+import { useCallback } from 'react';
+
 import { api } from '../api';
 
-export type DatabaseResponse = {
-    community_id: number | null;
-    id: number;
-    institution_name: string;
+export type CommunityTopic = {
+    topic_id: string;
     name: string;
-    openalex_id: string;
+    weight: number;
+    article_count: number;
 };
 
-type GraphNode = {
+export type ApiGraphNode = {
     id: string;
     name: string;
-    community_id?: number | null;
-    institution_name?: string | null;
+    community_id: number | null;
+    communities: { community_id: number }[];
+    institution_name: string | null;
+    weighted_degree: number;
 };
 
-type GraphLink = {
+export type ApiGraphLink = {
     source: string;
     target: string;
-    //weight: number;
+    weight: number;
+};
+
+export type ApiGraphResponse = {
+    algorithm: 'leiden' | 'bigclam';
+    nodes: ApiGraphNode[] | null;
+    links: ApiGraphLink[] | null;
+};
+
+export type GraphNode = {
+    id: string;
+    name: string;
+    community_id: number | null;
+    type: 'person';
+    location: 'RU' | 'INT';
+    info?: string;
+    val: number;
+};
+
+export type GraphLink = {
+    source: string;
+    target: string;
+    weight?: number;
     isHidden: boolean;
 };
 
-type GraphResponse = {
+export type GraphResponse = {
     nodes: GraphNode[];
     links: GraphLink[];
+    memberships: Map<string, number[]>;
 };
 
-export function useDatabase(): () => Promise<GraphResponse> {
-    async function fetchData(): Promise<GraphResponse> {
-        const res = await api.get<GraphResponse>('/graph');
+export function useGraph(
+    algorithm: 'leiden' | 'bigclam'
+): () => Promise<GraphResponse> {
+    return useCallback(async (): Promise<GraphResponse> => {
+        const res = await api.get<ApiGraphResponse | null>('/graph', {
+            params: { algorithm },
+        });
         const data = res.data;
+        if (!data || !Array.isArray(data.nodes) || !Array.isArray(data.links)) {
+            return { nodes: [], links: [], memberships: new Map() };
+        }
 
-        const nodes = (data.nodes ?? []).map((n) => ({
-            id: String(n.id),
-            name: n.name,
-            community_id: n.community_id ?? null,
-            val: 1,
-            type: 'person' as const,
-            location: (n.institution_name ? 'RU' : 'INT') as 'RU' | 'INT',
-            info: n.institution_name ?? undefined,
-        }));
+        const memberships = new Map<string, number[]>();
+        const nodes = data.nodes
+            .filter(
+                (node): node is ApiGraphNode =>
+                    !!node &&
+                    typeof node.id === 'string'
+            )
+            .map((node): GraphNode => {
+                const id = node.id;
+                const communityIds = node.communities
+                    .map((community) => community.community_id)
+                    .filter(Number.isInteger);
+                if (communityIds.length === 0 && node.community_id !== null) {
+                    communityIds.push(node.community_id);
+                }
+                if (communityIds.length > 0) {
+                    memberships.set(id, [...new Set(communityIds)]);
+                }
+                return {
+                    id,
+                    name: node.name,
+                    community_id: communityIds[0] ?? null,
+                    type: 'person' as const,
+                    location: (node.institution_name ? 'RU' : 'INT') as 'RU' | 'INT',
+                    info: node.institution_name ?? undefined,
+                    val: 1,
+                };
+            });
 
-        const links = (data.links ?? []).map((l) => ({
-            source: String(l.source),
-            target: String(l.target),
-            isHidden: false,
-        }));
+        const links: GraphLink[] = data.links
+            .filter(
+                (link): link is ApiGraphLink =>
+                    !!link &&
+                    typeof link.source === 'string' &&
+                    typeof link.target === 'string'
+            )
+            .map((link) => ({
+                source: link.source,
+                target: link.target,
+                weight: link.weight,
+                isHidden: false,
+            }));
+        return { nodes, links, memberships };
+    }, [algorithm]);
+}
 
-        return { nodes, links };
-    }
-    return fetchData;
+export function useCommunityTopics(
+    algorithm: 'leiden' | 'bigclam',
+    communityId: number | null
+): () => Promise<CommunityTopic[]> {
+    return useCallback(async () => {
+        if (communityId == null) return [];
+        const response = await api.get<CommunityTopic[]>(
+            `/communities/${algorithm}/${communityId}/topics`
+        );
+        return response.data;
+    }, [algorithm, communityId]);
 }

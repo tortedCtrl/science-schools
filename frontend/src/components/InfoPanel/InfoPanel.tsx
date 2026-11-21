@@ -1,15 +1,33 @@
 // src/components/InfoPanel/InfoPanel.tsx
+import type { CommunityTopic } from '../../hooks/backend';
+
+type InfoPanelNode = {
+  id: string;
+  name: string;
+  community_id?: number | null;
+  location?: string;
+  type?: string;
+  info?: string;
+};
 
 export interface InfoPanelProps {
-  selectedNode: any;
+  selectedNode: InfoPanelNode | null;
   rightOpen: boolean;
   onToggleRight: () => void;
+  showCommunityTopics: boolean;
+  communityTopics: CommunityTopic[];
+  communityTopicsLoading: boolean;
+  communityTopicsError: string | null;
 }
 
 export function InfoPanel({
   selectedNode,
   rightOpen,
   onToggleRight,
+  showCommunityTopics,
+  communityTopics,
+  communityTopicsLoading,
+  communityTopicsError,
 }: InfoPanelProps) {
   return (
     <aside className={`sidebar info-panel ${rightOpen ? 'open' : 'closed'}`}>
@@ -55,7 +73,9 @@ export function InfoPanel({
             </p>
             <p>
               <strong>Категория:</strong>{' '}
-              {selectedNode.type === 'project'
+              {selectedNode.type === 'community'
+                ? 'Научное сообщество'
+                : selectedNode.type === 'project'
                 ? 'Организация / Проект'
                 : 'Ученый / Сотрудник'}
             </p>
@@ -67,6 +87,37 @@ export function InfoPanel({
             Кликните на объект, чтобы изучить восстановленные бэкендом
             атрибуты и скрытые аффилиации.
           </p>
+        )}
+        {showCommunityTopics && (
+          <section className="community-topics">
+            <hr />
+            <h3>Популярные темы научной школы</h3>
+            {communityTopicsLoading ? (
+              <p className="placeholder-text">Загрузка тем...</p>
+            ) : communityTopicsError ? (
+              <p className="community-topics-error">{communityTopicsError}</p>
+            ) : selectedNode?.community_id == null ? (
+              <p className="placeholder-text">
+                Выберите ученого или сообщество, чтобы посмотреть его темы.
+              </p>
+            ) : communityTopics.length ? (
+              <ol className="community-topic-list">
+                {communityTopics.map((topic, index) => (
+                  <li key={topic.topic_id}>
+                    <span className="community-topic-rank">{index + 1}.</span>
+                    <span className="community-topic-name">{topic.name}</span>
+                    <span className="community-topic-weight">
+                      {topic.weight.toFixed(3)}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <p className="placeholder-text">
+                Для этого сообщества темы не найдены.
+              </p>
+            )}
+          </section>
         )}
       </div>
     </aside>

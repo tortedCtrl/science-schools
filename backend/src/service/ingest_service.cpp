@@ -7,6 +7,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <exception>
+#include <filesystem>
+#include <limits>
 #include <map>
 #include <mutex>
 #include <optional>
@@ -18,7 +20,9 @@
 #include <utility>
 #include <vector>
 
+#include "graph_engine/bigclam_wrapper.hpp"
 #include "graph_engine/leiden_wrapper.hpp"
+#include "service/community_topic_aggregator.hpp"
 
 namespace schools::service {
 namespace {
@@ -29,7 +33,7 @@ EdgeKey MakeEdgeKey(const std::string& first, const std::string& second) {
   return first < second ? EdgeKey{first, second} : EdgeKey{second, first};
 }
 
-Result<std::vector<domain::Membership>> ComputeMemberships(
+Result<std::vector<domain::Membership>> ComputeLeidenMemberships(
     std::span<const domain::Edge> edges) {
   if (edges.empty()) {
     return std::vector<domain::Membership>{};
@@ -38,9 +42,15 @@ Result<std::vector<domain::Membership>> ComputeMemberships(
   std::vector<graph::CoauthorshipEdge> input_edges;
   input_edges.reserve(edges.size());
   for (const domain::Edge& edge : edges) {
+    if (edge.weight < 0 ||
+        edge.weight > std::numeric_limits<std::int32_t>::max()) {
+      return MakeError(Errc::kInvalidArgument,
+                       "edge weight {} is outside the Leiden range",
+                       edge.weight);
+    }
     input_edges.push_back({.source_id = static_cast<std::uint32_t>(edge.source),
                            .target_id = static_cast<std::uint32_t>(edge.target),
-                           .weight = edge.weight});
+                           .weight = static_cast<std::int32_t>(edge.weight)});
   }
 
   try {
@@ -60,14 +70,26 @@ Result<std::vector<domain::Membership>> ComputeMemberships(
   }
 }
 
+Result<std::vector<domain::Membership>> ComputeBigClamMemberships(
+    std::span<const domain::Edge> edges, const Config& config) {
+  if (edges.empty()) {
+    return std::vector<domain::Membership>{};
+  }
+  return graph::BigClamWrapper::Run(
+      edges, std::filesystem::path{config.bigclam_binary},
+      config.bigclam_communities, config.bigclam_threads);
+}
+
 }  // namespace
 
 IngestService::IngestService(const Config& config,
                              repository::IngestRepository& repository,
-                             repository::CommunityRepository& communities)
+                             repository::CommunityRepository& communities,
+                             repository::GraphRepository& graph)
     : config_{config},
       repository_{repository},
       communities_{communities},
+      graph_{graph},
       limiter_{config.openalex_rps} {}
 
 openalex::ClientOptions IngestService::ClientOptions() const {
@@ -86,6 +108,7 @@ Result<std::vector<domain::Author>> IngestService::LoadAuthors() {
   std::vector<std::vector<domain::Author>> pages(
       static_cast<std::size_t>(page_count));
   std::atomic<int> next_page{0};
+  std::atomic<int> completed_pages{0};
   std::atomic<bool> failed{false};
   std::mutex error_mutex;
   std::optional<Error> error;
@@ -112,10 +135,24 @@ Result<std::vector<domain::Author>> IngestService::LoadAuthors() {
         }
         auto result = client.FetchAuthorsPage(page + 1, page_size);
         if (!result) {
-          record_error(result.error());
+          const Error& fetch_error = result.error();
+          record_error(Error{
+              .code = fetch_error.code,
+              .message = fmt::format("OpenAlex author page {} failed: {}",
+                                     page + 1, fetch_error.message)});
           return;
         }
         pages[static_cast<std::size_t>(page)] = std::move(*result);
+        const int completed = completed_pages.fetch_add(1) + 1;
+        const int log_interval = std::max(page_count / 10, 1);
+        if (completed == 1 || completed == page_count ||
+            completed % log_interval == 0) {
+          spdlog::info(
+              "Download progress: completed author pages {}/{} (page {}: {} "
+              "authors)",
+              completed, page_count, page + 1,
+              pages[static_cast<std::size_t>(page)].size());
+        }
       }
     });
   }
@@ -169,6 +206,7 @@ Result<std::vector<domain::Work>> IngestService::LoadWorks(
   std::unordered_map<std::string, domain::Work> works;
   std::mutex merge_mutex;
   std::atomic<std::size_t> next_batch{0};
+  std::atomic<std::size_t> completed_batches{0};
   std::atomic<bool> failed{false};
   std::mutex error_mutex;
   std::optional<Error> error;
@@ -198,20 +236,37 @@ Result<std::vector<domain::Work>> IngestService::LoadWorks(
         if (batch >= batches.size()) {
           return;
         }
+        std::size_t batch_work_count{0};
         for (int page = 1; page <= config_.ingest_work_pages; ++page) {
           auto page_works =
               client.FetchWorksPage(batches[batch], selected_authors, page,
                                     config_.ingest_work_page_size);
           if (!page_works) {
-            record_error(page_works.error());
+            const Error& fetch_error = page_works.error();
+            record_error(Error{
+                .code = fetch_error.code,
+                .message = fmt::format(
+                    "OpenAlex works batch {}/{} page {} failed: {}",
+                    batch + 1, batches.size(), page, fetch_error.message)});
             return;
           }
 
+          batch_work_count += page_works->size();
           const std::lock_guard<std::mutex> lock(merge_mutex);
           for (domain::Work& work : *page_works) {
             const std::string work_id = work.openalex_id;
             works.emplace(work_id, std::move(work));
           }
+        }
+        const std::size_t completed = completed_batches.fetch_add(1) + 1;
+        const std::size_t log_interval =
+            std::max(batches.size() / 10, std::size_t{1});
+        if (completed == 1 || completed == batches.size() ||
+            completed % log_interval == 0) {
+          spdlog::info(
+              "Download progress: completed work batches {}/{} (batch {}: {} "
+              "works)",
+              completed, batches.size(), batch + 1, batch_work_count);
         }
       }
     });
@@ -232,7 +287,8 @@ Result<std::vector<domain::Work>> IngestService::LoadWorks(
 }
 
 Result<domain::IngestResult> IngestService::Run() {
-  spdlog::info("Ingest: fetching up to {} authors with {} workers and {} req/s",
+  spdlog::info("Download started: fetching up to {} authors with {} workers "
+               "and {} req/s",
                config_.ingest_max_authors, config_.ingest_concurrency,
                config_.openalex_rps);
 
@@ -246,11 +302,13 @@ Result<domain::IngestResult> IngestService::Run() {
     return std::unexpected(authors.error());
   }
   if (authors->empty()) {
-    spdlog::warn("Ingest: no authors returned by OpenAlex");
+    spdlog::warn("Download finished: OpenAlex returned no authors");
+    spdlog::info("Processing finished: no authors to process");
     return domain::IngestResult{};
   }
-  spdlog::info("Ingest: downloaded {} authors", authors->size());
 
+  spdlog::info("Download progress: fetching works for {} selected authors",
+               authors->size());
   auto works = LoadWorks(*authors);
   if (!works) {
     return std::unexpected(works.error());
@@ -307,6 +365,7 @@ Result<domain::IngestResult> IngestService::Run() {
 
   std::vector<domain::Article> articles;
   std::vector<domain::AuthorArticle> links;
+  std::vector<domain::ArticleTopicInput> topic_inputs;
   for (const domain::Work& work : *works) {
     bool needed = false;
     for (const std::string& author_id : work.author_ids) {
@@ -319,16 +378,21 @@ Result<domain::IngestResult> IngestService::Run() {
       continue;
     }
 
-    articles.push_back(domain::Article{.openalex_id = work.openalex_id,
-                                       .title = work.title,
-                                       .year = work.year});
+    domain::Article article{.openalex_id = work.openalex_id,
+                            .title = work.title,
+                            .year = work.year,
+                            .topics = work.topics};
+    domain::ArticleTopicInput topic_input{.article = article};
     for (const std::string& author_id : work.author_ids) {
       const auto it = dense_ids.find(author_id);
       if (it != dense_ids.end()) {
         links.push_back(domain::AuthorArticle{.author_id = it->second,
                                               .article_id = work.openalex_id});
+        topic_input.author_ids.push_back(it->second);
       }
     }
+    articles.push_back(std::move(article));
+    topic_inputs.push_back(std::move(topic_input));
   }
 
   auto saved = repository_.SaveGraph(stored_authors, edges, articles, links);
@@ -336,24 +400,90 @@ Result<domain::IngestResult> IngestService::Run() {
     return std::unexpected(saved.error());
   }
 
-  auto memberships = ComputeMemberships(edges);
-  if (!memberships) {
-    return std::unexpected(memberships.error());
-  }
-  auto communities_saved = communities_.ReplaceMemberships(*memberships);
-  if (!communities_saved) {
-    return std::unexpected(communities_saved.error());
-  }
-
   domain::IngestResult result{};
   result.authors = stored_authors.size();
   result.works = works->size();
   result.edges = edges.size();
   result.articles = articles.size();
+  spdlog::info("Download finished: {} authors, {} works, {} edges, {} articles",
+               result.authors, result.works, result.edges, result.articles);
+  return RunAlgorithms(edges, topic_inputs, result);
+}
+
+Result<domain::IngestResult> IngestService::RunFromDatabase() {
+  spdlog::info("Download skipped: reusing existing PostgreSQL data");
+  auto edges = graph_.ListEdges();
+  if (!edges) {
+    return std::unexpected(edges.error());
+  }
+
+  auto topic_inputs = graph_.GetArticleTopicInputs();
+  if (!topic_inputs) {
+    return std::unexpected(topic_inputs.error());
+  }
+
+  std::unordered_set<std::int32_t> author_ids;
+  for (const domain::Edge& edge : *edges) {
+    author_ids.insert(edge.source);
+    author_ids.insert(edge.target);
+  }
+
+  domain::IngestResult result{};
+  result.authors = author_ids.size();
+  result.works = topic_inputs->size();
+  result.edges = edges->size();
+  result.articles = topic_inputs->size();
+  return RunAlgorithms(*edges, *topic_inputs, result);
+}
+
+Result<domain::IngestResult> IngestService::RunAlgorithms(
+    std::span<const domain::Edge> edges,
+    std::span<const domain::ArticleTopicInput> topic_inputs,
+    domain::IngestResult result) {
+  spdlog::info("Processing started: {} edges, {} articles", edges.size(),
+               topic_inputs.size());
+  spdlog::info("Algorithms to run: Leiden and SNAP BigCLAM");
+  spdlog::info("Starting Leiden algorithm on {} edges", edges.size());
+  auto memberships = ComputeLeidenMemberships(edges);
+  if (!memberships) {
+    return std::unexpected(memberships.error());
+  }
+  spdlog::info("Starting topic calculation for Leiden clusters");
+  const std::vector<domain::CommunityTopic> community_topics =
+      ComputeCommunityTopics(*memberships, topic_inputs,
+                             domain::CommunityAlgorithm::kLeiden);
+  auto communities_saved =
+      communities_.SaveLeidenResults(*memberships, community_topics);
+  if (!communities_saved) {
+    return std::unexpected(communities_saved.error());
+  }
+
+  spdlog::info(
+      "Starting SNAP BigCLAM algorithm on {} edges "
+      "(communities={}, threads={})",
+      edges.size(), config_.bigclam_communities, config_.bigclam_threads);
+  auto bigclam_memberships = ComputeBigClamMemberships(edges, config_);
+  if (!bigclam_memberships) {
+    return std::unexpected(bigclam_memberships.error());
+  }
+  spdlog::info("Starting topic calculation for SNAP BigCLAM clusters");
+  const std::vector<domain::CommunityTopic> bigclam_topics =
+      ComputeCommunityTopics(*bigclam_memberships, topic_inputs,
+                             domain::CommunityAlgorithm::kBigClam);
+  auto bigclam_saved =
+      communities_.SaveBigClamResults(*bigclam_memberships, bigclam_topics);
+  if (!bigclam_saved) {
+    return std::unexpected(bigclam_saved.error());
+  }
+
   result.communities = memberships->size();
   spdlog::info(
-      "Ingest: saved {} authors, {} edges, {} articles, {} communities",
-      result.authors, result.edges, result.articles, result.communities);
+      "Ingest: saved Leiden run {} ({} memberships) and BigCLAM run {} "
+      "({} memberships); {} authors, {} edges, {} articles",
+      *communities_saved,
+      memberships->size(), *bigclam_saved, bigclam_memberships->size(),
+      result.authors, result.edges, result.articles);
+  spdlog::info("Processing finished");
   return result;
 }
 

@@ -20,6 +20,7 @@
 #include <utility>
 #include <vector>
 
+#include "common/scoped_timer.hpp"
 #include "graph_engine/bigclam_wrapper.hpp"
 #include "graph_engine/leiden_wrapper.hpp"
 #include "service/community_topic_aggregator.hpp"
@@ -291,118 +292,138 @@ Result<domain::IngestResult> IngestService::Run() {
                "and {} req/s",
                config_.ingest_max_authors, config_.ingest_concurrency,
                config_.openalex_rps);
-
-  auto cleared = repository_.ClearImportData();
-  if (!cleared) {
-    return std::unexpected(cleared.error());
+  {
+    schools::ScopedTimer timer{"ClearImportData"};
+    auto cleared = repository_.ClearImportData();
+    if (!cleared) {
+      return std::unexpected(cleared.error());
+    }
   }
 
-  auto authors = LoadAuthors();
-  if (!authors) {
-    return std::unexpected(authors.error());
+  std::vector<domain::Author> authors;
+  {
+    schools::ScopedTimer timer{"LoadAuthors"};
+    auto loaded = LoadAuthors();
+    if (!loaded) {
+      return std::unexpected(loaded.error());
+    }
+    authors = std::move(*loaded);
   }
-  if (authors->empty()) {
+  if (authors.empty()) {
     spdlog::warn("Download finished: OpenAlex returned no authors");
     spdlog::info("Processing finished: no authors to process");
     return domain::IngestResult{};
   }
 
   spdlog::info("Download progress: fetching works for {} selected authors",
-               authors->size());
-  auto works = LoadWorks(*authors);
-  if (!works) {
-    return std::unexpected(works.error());
-  }
-  spdlog::info("Ingest: collected {} unique works", works->size());
+               authors.size());
+  spdlog::info("Ingest: downloaded {} authors", authors.size());
 
-  std::map<EdgeKey, std::int32_t> edge_weights;
-  for (const domain::Work& work : *works) {
-    for (std::size_t first = 0; first < work.author_ids.size(); ++first) {
-      for (std::size_t second = first + 1; second < work.author_ids.size();
-           ++second) {
-        ++edge_weights[MakeEdgeKey(work.author_ids[first],
-                                   work.author_ids[second])];
-      }
+  std::vector<domain::Work> works;
+  {
+    schools::ScopedTimer timer{"LoadWorks"};
+    auto loaded = LoadWorks(authors);
+    if (!loaded) {
+      return std::unexpected(loaded.error());
     }
+    works = std::move(*loaded);
   }
+  spdlog::info("Ingest: collected {} unique works", works.size());
 
-  std::unordered_set<std::string> connected_authors;
-  for (const auto& [pair, weight] : edge_weights) {
-    (void)weight;
-    connected_authors.insert(pair.first);
-    connected_authors.insert(pair.second);
-  }
-
-  std::unordered_map<std::string, std::int32_t> dense_ids;
   std::vector<domain::Author> stored_authors;
-  dense_ids.reserve(connected_authors.size());
-  stored_authors.reserve(connected_authors.size());
-  for (const domain::Author& author : *authors) {
-    if (!connected_authors.contains(author.openalex_id)) {
-      continue;
-    }
-    const auto dense_id = static_cast<std::int32_t>(stored_authors.size());
-    dense_ids.emplace(author.openalex_id, dense_id);
-    stored_authors.push_back(author);
-  }
-
   std::vector<domain::Edge> edges;
-  edges.reserve(edge_weights.size());
-  for (const auto& [pair, weight] : edge_weights) {
-    const auto source_it = dense_ids.find(pair.first);
-    const auto target_it = dense_ids.find(pair.second);
-    if (source_it == dense_ids.end() || target_it == dense_ids.end()) {
-      continue;
-    }
-    std::int32_t source = source_it->second;
-    std::int32_t target = target_it->second;
-    if (source > target) {
-      std::swap(source, target);
-    }
-    edges.push_back(
-        domain::Edge{.source = source, .target = target, .weight = weight});
-  }
-
   std::vector<domain::Article> articles;
   std::vector<domain::AuthorArticle> links;
   std::vector<domain::ArticleTopicInput> topic_inputs;
-  for (const domain::Work& work : *works) {
-    bool needed = false;
-    for (const std::string& author_id : work.author_ids) {
-      if (dense_ids.contains(author_id)) {
-        needed = true;
-        break;
+  {
+    schools::ScopedTimer timer{"BuildGraphAndEdges"};
+    std::map<EdgeKey, std::int32_t> edge_weights;
+    for (const domain::Work& work : works) {
+      for (std::size_t first = 0; first < work.author_ids.size(); ++first) {
+        for (std::size_t second = first + 1; second < work.author_ids.size();
+             ++second) {
+          ++edge_weights[MakeEdgeKey(work.author_ids[first],
+                                     work.author_ids[second])];
+        }
       }
     }
-    if (!needed) {
-      continue;
+
+    std::unordered_set<std::string> connected_authors;
+    for (const auto& [pair, weight] : edge_weights) {
+      (void)weight;
+      connected_authors.insert(pair.first);
+      connected_authors.insert(pair.second);
     }
 
-    domain::Article article{.openalex_id = work.openalex_id,
-                            .title = work.title,
-                            .year = work.year,
-                            .topics = work.topics};
-    domain::ArticleTopicInput topic_input{.article = article};
-    for (const std::string& author_id : work.author_ids) {
-      const auto it = dense_ids.find(author_id);
-      if (it != dense_ids.end()) {
-        links.push_back(domain::AuthorArticle{.author_id = it->second,
-                                              .article_id = work.openalex_id});
-        topic_input.author_ids.push_back(it->second);
+    std::unordered_map<std::string, std::int32_t> dense_ids;
+    dense_ids.reserve(connected_authors.size());
+    stored_authors.reserve(connected_authors.size());
+    for (const domain::Author& author : authors) {
+      if (!connected_authors.contains(author.openalex_id)) {
+        continue;
+      }
+      const auto dense_id = static_cast<std::int32_t>(stored_authors.size());
+      dense_ids.emplace(author.openalex_id, dense_id);
+      stored_authors.push_back(author);
+    }
+
+    edges.reserve(edge_weights.size());
+    for (const auto& [pair, weight] : edge_weights) {
+      const auto source_it = dense_ids.find(pair.first);
+      const auto target_it = dense_ids.find(pair.second);
+      if (source_it == dense_ids.end() || target_it == dense_ids.end()) {
+        continue;
+      }
+      std::int32_t source = source_it->second;
+      std::int32_t target = target_it->second;
+      if (source > target) {
+        std::swap(source, target);
+      }
+      edges.push_back(
+          domain::Edge{.source = source, .target = target, .weight = weight});
+    }
+
+    for (const domain::Work& work : works) {
+      bool needed = false;
+      for (const std::string& author_id : work.author_ids) {
+        if (dense_ids.contains(author_id)) {
+          needed = true;
+          break;
+        }
+      }
+      if (!needed) {
+        continue;
+      }
+
+      domain::Article article{.openalex_id = work.openalex_id,
+                              .title = work.title,
+                              .year = work.year,
+                              .topics = work.topics};
+      domain::ArticleTopicInput topic_input{.article = article};
+      for (const std::string& author_id : work.author_ids) {
+        const auto it = dense_ids.find(author_id);
+        if (it != dense_ids.end()) {
+          links.push_back(domain::AuthorArticle{.author_id = it->second,
+                                                .article_id = work.openalex_id});
+          topic_input.author_ids.push_back(it->second);
+        }
+      }
+      articles.push_back(std::move(article));
+      topic_inputs.push_back(std::move(topic_input));
+    }
+
+    {
+      schools::ScopedTimer save_timer{"SaveGraph"};
+      auto saved = repository_.SaveGraph(stored_authors, edges, articles, links);
+      if (!saved) {
+        return std::unexpected(saved.error());
       }
     }
-    articles.push_back(std::move(article));
-    topic_inputs.push_back(std::move(topic_input));
-  }
-
-  auto saved = repository_.SaveGraph(stored_authors, edges, articles, links);
-  if (!saved) {
-    return std::unexpected(saved.error());
   }
 
   domain::IngestResult result{};
   result.authors = stored_authors.size();
-  result.works = works->size();
+  result.works = works.size();
   result.edges = edges.size();
   result.articles = articles.size();
   spdlog::info("Download finished: {} authors, {} works, {} edges, {} articles",
@@ -412,28 +433,38 @@ Result<domain::IngestResult> IngestService::Run() {
 
 Result<domain::IngestResult> IngestService::RunFromDatabase() {
   spdlog::info("Download skipped: reusing existing PostgreSQL data");
-  auto edges = graph_.ListEdges();
-  if (!edges) {
-    return std::unexpected(edges.error());
+  std::vector<domain::Edge> edges;
+  {
+    schools::ScopedTimer timer{"LoadEdges"};
+    auto loaded = graph_.ListEdges();
+    if (!loaded) {
+      return std::unexpected(loaded.error());
+    }
+    edges = std::move(*loaded);
   }
 
-  auto topic_inputs = graph_.GetArticleTopicInputs();
-  if (!topic_inputs) {
-    return std::unexpected(topic_inputs.error());
+  std::vector<domain::ArticleTopicInput> topic_inputs;
+  {
+    schools::ScopedTimer timer{"LoadArticleTopicInputs"};
+    auto loaded = graph_.GetArticleTopicInputs();
+    if (!loaded) {
+      return std::unexpected(loaded.error());
+    }
+    topic_inputs = std::move(*loaded);
   }
 
   std::unordered_set<std::int32_t> author_ids;
-  for (const domain::Edge& edge : *edges) {
+  for (const domain::Edge& edge : edges) {
     author_ids.insert(edge.source);
     author_ids.insert(edge.target);
   }
 
   domain::IngestResult result{};
   result.authors = author_ids.size();
-  result.works = topic_inputs->size();
-  result.edges = edges->size();
-  result.articles = topic_inputs->size();
-  return RunAlgorithms(*edges, *topic_inputs, result);
+  result.works = topic_inputs.size();
+  result.edges = edges.size();
+  result.articles = topic_inputs.size();
+  return RunAlgorithms(edges, topic_inputs, result);
 }
 
 Result<domain::IngestResult> IngestService::RunAlgorithms(
@@ -443,46 +474,75 @@ Result<domain::IngestResult> IngestService::RunAlgorithms(
   spdlog::info("Processing started: {} edges, {} articles", edges.size(),
                topic_inputs.size());
   spdlog::info("Algorithms to run: Leiden and SNAP BigCLAM");
-  spdlog::info("Starting Leiden algorithm on {} edges", edges.size());
-  auto memberships = ComputeLeidenMemberships(edges);
-  if (!memberships) {
-    return std::unexpected(memberships.error());
-  }
-  spdlog::info("Starting topic calculation for Leiden clusters");
-  const std::vector<domain::CommunityTopic> community_topics =
-      ComputeCommunityTopics(*memberships, topic_inputs,
-                             domain::CommunityAlgorithm::kLeiden);
-  auto communities_saved =
-      communities_.SaveLeidenResults(*memberships, community_topics);
-  if (!communities_saved) {
-    return std::unexpected(communities_saved.error());
+
+  std::vector<domain::Membership> memberships;
+  std::int64_t communities_saved_leiden = 0;
+  {
+    schools::ScopedTimer timer{"LeidenClustering"};
+    spdlog::info("Starting Leiden algorithm on {} edges", edges.size());
+    auto memberships_result = ComputeLeidenMemberships(edges);
+    if (!memberships_result) {
+      return std::unexpected(memberships_result.error());
+    }
+    memberships = std::move(*memberships_result);
   }
 
-  spdlog::info(
-      "Starting SNAP BigCLAM algorithm on {} edges "
-      "(communities={}, threads={})",
-      edges.size(), config_.bigclam_communities, config_.bigclam_threads);
-  auto bigclam_memberships = ComputeBigClamMemberships(edges, config_);
-  if (!bigclam_memberships) {
-    return std::unexpected(bigclam_memberships.error());
-  }
-  spdlog::info("Starting topic calculation for SNAP BigCLAM clusters");
-  const std::vector<domain::CommunityTopic> bigclam_topics =
-      ComputeCommunityTopics(*bigclam_memberships, topic_inputs,
-                             domain::CommunityAlgorithm::kBigClam);
-  auto bigclam_saved =
-      communities_.SaveBigClamResults(*bigclam_memberships, bigclam_topics);
-  if (!bigclam_saved) {
-    return std::unexpected(bigclam_saved.error());
+  {
+    schools::ScopedTimer timer{"CommunityTopicsLeiden"};
+    spdlog::info("Starting topic calculation for Leiden clusters");
+    const std::vector<domain::CommunityTopic> community_topics =
+        ComputeCommunityTopics(memberships, topic_inputs,
+                               domain::CommunityAlgorithm::kLeiden);
+    {
+      schools::ScopedTimer save_timer{"SaveLeidenResults"};
+      auto saved =
+          communities_.SaveLeidenResults(memberships, community_topics);
+      if (!saved) {
+        return std::unexpected(saved.error());
+      }
+      communities_saved_leiden = *saved;
+    }
   }
 
-  result.communities = memberships->size();
+  std::vector<domain::Membership> bigclam_memberships;
+  std::int64_t bigclam_saved = 0;
+  {
+    schools::ScopedTimer timer{"BigClamRun"};
+    spdlog::info(
+        "Starting SNAP BigCLAM algorithm on {} edges "
+        "(communities={}, threads={})",
+        edges.size(), config_.bigclam_communities, config_.bigclam_threads);
+    auto bigclam_result = ComputeBigClamMemberships(edges, config_);
+    if (!bigclam_result) {
+      return std::unexpected(bigclam_result.error());
+    }
+    bigclam_memberships = std::move(*bigclam_result);
+  }
+
+  {
+    schools::ScopedTimer timer{"CommunityTopicsBigClam"};
+    spdlog::info("Starting topic calculation for SNAP BigCLAM clusters");
+    const std::vector<domain::CommunityTopic> bigclam_topics =
+        ComputeCommunityTopics(bigclam_memberships, topic_inputs,
+                               domain::CommunityAlgorithm::kBigClam);
+    {
+      schools::ScopedTimer save_timer{"SaveBigClamResults"};
+      auto saved =
+          communities_.SaveBigClamResults(bigclam_memberships, bigclam_topics);
+      if (!saved) {
+        return std::unexpected(saved.error());
+      }
+      bigclam_saved = *saved;
+    }
+  }
+
+  result.communities = memberships.size();
   spdlog::info(
       "Ingest: saved Leiden run {} ({} memberships) and BigCLAM run {} "
       "({} memberships); {} authors, {} edges, {} articles",
-      *communities_saved,
-      memberships->size(), *bigclam_saved, bigclam_memberships->size(),
-      result.authors, result.edges, result.articles);
+      communities_saved_leiden, memberships.size(), bigclam_saved,
+      bigclam_memberships.size(), result.authors, result.edges,
+      result.articles);
   spdlog::info("Processing finished");
   return result;
 }

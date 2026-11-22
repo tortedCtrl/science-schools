@@ -7,7 +7,6 @@
 namespace schools::domain {
 
 struct ArticleTopic {
-    //ArticleId article_id;
     std::string topic_id;
     std::string name;
     double score{0.0};

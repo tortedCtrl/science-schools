@@ -12,7 +12,7 @@ struct Article {
     ArticleId openalex_id;
     std::string title;
     std::int32_t year{0};
-    std::vector<ArticleTopic> topics;
+    std::vector<ArticleTopic> topics; // Обсудить хранение всех тем для статьи в ram
 };
 
 }  // namespace schools::domain

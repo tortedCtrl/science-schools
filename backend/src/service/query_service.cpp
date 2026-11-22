@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <nlohmann/json.hpp>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -12,6 +13,16 @@ namespace schools::service {
 namespace {
 
 using Json = nlohmann::json;
+
+std::string_view AlgorithmName(domain::CommunityAlgorithm algorithm) {
+  switch (algorithm) {
+    case domain::CommunityAlgorithm::kLeiden:
+      return "leiden";
+    case domain::CommunityAlgorithm::kBigClam:
+      return "bigclam";
+  }
+  return "leiden";
+}
 
 Json AuthorJson(const domain::AuthorSummary& author) {
   Json value;
@@ -26,19 +37,82 @@ Json AuthorJson(const domain::AuthorSummary& author) {
   return value;
 }
 
-Json ArticleJson(const domain::Article& article) {
+Json GraphNodeJson(const domain::GraphNodeDto& node) {
   Json value;
-  value["id"] = article.openalex_id;
+  value["id"] = node.id;
+  value["name"] = node.name;
+  value["community_id"] =
+      node.community_id ? Json(*node.community_id) : Json(nullptr);
+  value["communities"] = Json::array();
+  for (const domain::CommunityMembershipDto& membership : node.communities) {
+    value["communities"].push_back(
+        {{"community_id", membership.community_id}});
+  }
+  value["institution_name"] =
+      node.institution_name ? Json(*node.institution_name) : Json(nullptr);
+  value["weighted_degree"] = node.weighted_degree;
+  return value;
+}
+
+Json GraphLinkJson(const domain::GraphLinkDto& link) {
+  Json value;
+  value["source"] = link.source;
+  value["target"] = link.target;
+  value["weight"] = link.weight;
+  return value;
+}
+
+Json GraphJson(const domain::GraphResponseDto& graph) {
+  Json value;
+  value["algorithm"] = AlgorithmName(graph.algorithm);
+  value["nodes"] = Json::array();
+  for (const domain::GraphNodeDto& node : graph.nodes) {
+    value["nodes"].push_back(GraphNodeJson(node));
+  }
+  value["links"] = Json::array();
+  for (const domain::GraphLinkDto& link : graph.links) {
+    value["links"].push_back(GraphLinkJson(link));
+  }
+  return value;
+}
+
+Json ArticleSummaryJson(const domain::ArticleSummaryDto& article) {
+  Json value;
+  value["id"] = article.id;
   value["title"] = article.title;
   value["year"] = article.year;
   return value;
 }
 
-Json EdgeJson(const domain::Edge& edge) {
+Json AuthorCardJson(const domain::AuthorCardResponseDto& card) {
   Json value;
-  value["source"] = std::to_string(edge.source);
-  value["target"] = std::to_string(edge.target);
-  value["weight"] = edge.weight;
+  value["openalex_id"] = card.openalex_id;
+  value["name"] = card.name;
+  value["community_id"] =
+      card.community_id ? Json(*card.community_id) : Json(nullptr);
+  value["institution_name"] =
+      card.institution_name ? Json(*card.institution_name) : Json(nullptr);
+  value["weighted_degree"] = card.weighted_degree;
+  value["articles"] = Json::array();
+  for (const domain::ArticleSummaryDto& article : card.articles) {
+    value["articles"].push_back(ArticleSummaryJson(article));
+  }
+  return value;
+}
+
+Json CommunityTopicJson(const domain::CommunityTopicDto& topic) {
+  Json value;
+  value["topic_id"] = topic.topic_id;
+  value["name"] = topic.name;
+  value["weight"] = topic.weight;
+  value["article_count"] = topic.article_count;
+  return value;
+}
+
+Json CommunitySummaryJson(const domain::CommunitySummary& community) {
+  Json value;
+  value["community_id"] = community.community_id;
+  value["member_count"] = community.member_count;
   return value;
 }
 
@@ -70,21 +144,20 @@ Result<std::string> QueryService::GetAuthorCardJson(std::int32_t author_id) {
   }
 
   const domain::AuthorCard& value = optional_card.value();
-  Json result;
-  result["openalex_id"] = value.author.openalex_id;
-  result["name"] = value.author.name;
-  result["community_id"] = value.author.community_id
-                               ? Json(*value.author.community_id)
-                               : Json(nullptr);
-  result["institution_name"] = value.author.institution_name
-                                   ? Json(*value.author.institution_name)
-                                   : Json(nullptr);
-  result["weighted_degree"] = value.author.weighted_degree;
-  result["articles"] = Json::array();
+  domain::AuthorCardResponseDto response{
+      .openalex_id = value.author.openalex_id,
+      .name = value.author.name,
+      .community_id = value.author.community_id,
+      .institution_name = value.author.institution_name,
+      .weighted_degree = value.author.weighted_degree,
+      .articles = {}};
+  response.articles.reserve(value.articles.size());
   for (const domain::Article& article : value.articles) {
-    result["articles"].push_back(ArticleJson(article));
+    response.articles.push_back({.id = article.openalex_id,
+                                 .title = article.title,
+                                 .year = article.year});
   }
-  return result.dump();
+  return AuthorCardJson(response).dump();
 }
 
 Result<std::string> QueryService::ListEdgesJson() {
@@ -95,39 +168,85 @@ Result<std::string> QueryService::ListEdgesJson() {
 
   Json result = Json::array();
   for (const domain::Edge& edge : *edges) {
-    result.push_back(EdgeJson(edge));
+    result.push_back(GraphLinkJson({.source = std::to_string(edge.source),
+                                    .target = std::to_string(edge.target),
+                                    .weight = edge.weight}));
   }
   return result.dump();
 }
 
-Result<std::string> QueryService::GetGraphJson() {
-  auto graph = graph_.GetGraph();
+Result<std::string> QueryService::GetGraphJson(std::string_view algorithm) {
+  auto graph = graph_.GetGraph(algorithm);
   if (!graph) {
     return std::unexpected(graph.error());
   }
 
-  Json nodes = Json::array();
+  std::unordered_map<std::int32_t,
+                     std::vector<domain::CommunityMembershipDto>>
+      memberships_by_author;
+  for (const domain::Membership& membership : graph->memberships) {
+    memberships_by_author[membership.author_id].push_back(
+        {.community_id = membership.community_id});
+  }
+
+  domain::GraphResponseDto response{
+                                    .algorithm =
+                                        algorithm == "bigclam"
+                                            ? domain::CommunityAlgorithm::kBigClam
+                                            : domain::CommunityAlgorithm::kLeiden,
+                                    .nodes = {},
+                                    .links = {}};
+  response.nodes.reserve(graph->nodes.size());
   for (const domain::AuthorSummary& author : graph->nodes) {
-    Json node;
-    node["id"] = std::to_string(author.id);
-    node["name"] = author.name;
-    node["community_id"] =
-        author.community_id ? Json(*author.community_id) : Json(nullptr);
-    node["institution_name"] = author.institution_name
-                                   ? Json(*author.institution_name)
-                                   : Json(nullptr);
-    node["weighted_degree"] = author.weighted_degree;
-    nodes.push_back(std::move(node));
+    auto memberships = memberships_by_author.find(author.id);
+    response.nodes.push_back(
+        {.id = std::to_string(author.id),
+         .name = author.name,
+         .community_id = author.community_id,
+         .communities = memberships == memberships_by_author.end()
+                            ? std::vector<domain::CommunityMembershipDto>{}
+                            : memberships->second,
+         .institution_name = author.institution_name,
+         .weighted_degree = author.weighted_degree});
   }
 
-  Json links = Json::array();
+  response.links.reserve(graph->links.size());
   for (const domain::Edge& edge : graph->links) {
-    links.push_back(EdgeJson(edge));
+    response.links.push_back({.source = std::to_string(edge.source),
+                              .target = std::to_string(edge.target),
+                              .weight = edge.weight});
+  }
+  return GraphJson(response).dump();
+}
+
+Result<std::string> QueryService::ListCommunitiesJson(
+    std::string_view algorithm) {
+  auto communities = communities_.ListCommunities(algorithm);
+  if (!communities) {
+    return std::unexpected(communities.error());
   }
 
-  Json result;
-  result["nodes"] = std::move(nodes);
-  result["links"] = std::move(links);
+  Json result = Json::array();
+  for (const domain::CommunitySummary& community : *communities) {
+    result.push_back(CommunitySummaryJson(community));
+  }
+  return result.dump();
+}
+
+Result<std::string> QueryService::ListCommunityTopicsJson(
+    std::string_view algorithm, std::int32_t community_id) {
+  auto topics = communities_.ListCommunityTopics(algorithm, community_id);
+  if (!topics) {
+    return std::unexpected(topics.error());
+  }
+
+  Json result = Json::array();
+  for (const domain::CommunityTopic& topic : *topics) {
+    result.push_back(CommunityTopicJson({.topic_id = topic.topic_id,
+                                         .name = topic.topic_name,
+                                         .weight = topic.weight,
+                                         .article_count = topic.article_count}));
+  }
   return result.dump();
 }
 

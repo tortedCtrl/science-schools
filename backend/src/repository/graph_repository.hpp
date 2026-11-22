@@ -1,5 +1,6 @@
 #pragma once
 
+#include <string_view>
 #include <vector>
 
 #include "common/error.hpp"
@@ -13,7 +14,8 @@ class GraphRepository {
   explicit GraphRepository(Database& database) : database_(database) {}
 
   Result<std::vector<domain::Edge>> ListEdges();
-  Result<domain::GraphData> GetGraph();
+  Result<domain::GraphData> GetGraph(std::string_view algorithm);
+  Result<std::vector<domain::ArticleTopicInput>> GetArticleTopicInputs();
 
  private:
   Database& database_;

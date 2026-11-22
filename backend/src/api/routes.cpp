@@ -71,6 +71,14 @@ void RegisterRoutes(httplib::Server& server, service::QueryService& query) {
                  [](const httplib::Request&, httplib::Response& response) {
                    response.status = 204;
                  });
+  server.Options(R"(/communities/(leiden|bigclam))",
+                 [](const httplib::Request&, httplib::Response& response) {
+                   response.status = 204;
+                 });
+  server.Options(R"(/communities/(leiden|bigclam)/(\d+)/topics)",
+                 [](const httplib::Request&, httplib::Response& response) {
+                   response.status = 204;
+                 });
 
   server.Get("/authors",
              [&query](const httplib::Request&, httplib::Response& response) {
@@ -97,8 +105,43 @@ void RegisterRoutes(httplib::Server& server, service::QueryService& query) {
              });
 
   server.Get("/graph",
-             [&query](const httplib::Request&, httplib::Response& response) {
-               SendBody(response, query.GetGraphJson());
+             [&query](const httplib::Request& request,
+                      httplib::Response& response) {
+               const std::string algorithm =
+                   request.has_param("algorithm")
+                       ? request.get_param_value("algorithm")
+                       : "leiden";
+               if (algorithm != "leiden" && algorithm != "bigclam") {
+                 SendJson(response,
+                          R"({"error":"algorithm must be leiden or bigclam"})",
+                          400);
+                 return;
+               }
+               SendBody(response, query.GetGraphJson(algorithm));
+             });
+  server.Get(R"(/communities/(leiden|bigclam))",
+             [&query](const httplib::Request& request,
+                      httplib::Response& response) {
+               SendBody(response,
+                        query.ListCommunitiesJson(request.matches[1].str()));
+             });
+  server.Get(R"(/communities/(leiden|bigclam)/(\d+)/topics)",
+             [&query](const httplib::Request& request,
+                      httplib::Response& response) {
+               const std::string algorithm = request.matches[1].str();
+               const std::string text = request.matches[2].str();
+               std::int32_t community_id{0};
+               const char* begin = text.data();
+               const char* end = begin + text.size();
+               const auto [ptr, error] =
+                   std::from_chars(begin, end, community_id);
+               if (error != std::errc{} || ptr != end || community_id < 0) {
+                 SendJson(response,
+                          R"({"error":"invalid community id"})", 400);
+                 return;
+               }
+               SendBody(response,
+                        query.ListCommunityTopicsJson(algorithm, community_id));
              });
 }
 

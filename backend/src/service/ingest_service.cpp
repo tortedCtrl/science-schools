@@ -7,6 +7,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <exception>
+#include <filesystem>
+#include <limits>
 #include <map>
 #include <mutex>
 #include <optional>
@@ -18,7 +20,9 @@
 #include <utility>
 #include <vector>
 
+#include "graph_engine/bigclam_wrapper.hpp"
 #include "graph_engine/leiden_wrapper.hpp"
+#include "service/community_topic_aggregator.hpp"
 
 namespace schools::service {
 namespace {
@@ -29,7 +33,7 @@ EdgeKey MakeEdgeKey(const std::string& first, const std::string& second) {
   return first < second ? EdgeKey{first, second} : EdgeKey{second, first};
 }
 
-Result<std::vector<domain::Membership>> ComputeMemberships(
+Result<std::vector<domain::Membership>> ComputeLeidenMemberships(
     std::span<const domain::Edge> edges) {
   if (edges.empty()) {
     return std::vector<domain::Membership>{};
@@ -38,9 +42,15 @@ Result<std::vector<domain::Membership>> ComputeMemberships(
   std::vector<graph::CoauthorshipEdge> input_edges;
   input_edges.reserve(edges.size());
   for (const domain::Edge& edge : edges) {
+    if (edge.weight < 0 ||
+        edge.weight > std::numeric_limits<std::int32_t>::max()) {
+      return MakeError(Errc::kInvalidArgument,
+                       "edge weight {} is outside the Leiden range",
+                       edge.weight);
+    }
     input_edges.push_back({.source_id = static_cast<std::uint32_t>(edge.source),
                            .target_id = static_cast<std::uint32_t>(edge.target),
-                           .weight = edge.weight});
+                           .weight = static_cast<std::int32_t>(edge.weight)});
   }
 
   try {
@@ -58,6 +68,16 @@ Result<std::vector<domain::Membership>> ComputeMemberships(
     return MakeError(Errc::kInternal, "Leiden clustering failed: {}",
                      error.what());
   }
+}
+
+Result<std::vector<domain::Membership>> ComputeBigClamMemberships(
+    std::span<const domain::Edge> edges, const Config& config) {
+  if (edges.empty()) {
+    return std::vector<domain::Membership>{};
+  }
+  return graph::BigClamWrapper::Run(
+      edges, std::filesystem::path{config.bigclam_binary},
+      config.bigclam_communities, config.bigclam_threads);
 }
 
 }  // namespace
@@ -307,6 +327,7 @@ Result<domain::IngestResult> IngestService::Run() {
 
   std::vector<domain::Article> articles;
   std::vector<domain::AuthorArticle> links;
+  std::vector<domain::ArticleTopicInput> topic_inputs;
   for (const domain::Work& work : *works) {
     bool needed = false;
     for (const std::string& author_id : work.author_ids) {
@@ -319,16 +340,21 @@ Result<domain::IngestResult> IngestService::Run() {
       continue;
     }
 
-    articles.push_back(domain::Article{.openalex_id = work.openalex_id,
-                                       .title = work.title,
-                                       .year = work.year});
+    domain::Article article{.openalex_id = work.openalex_id,
+                            .title = work.title,
+                            .year = work.year,
+                            .topics = work.topics};
+    domain::ArticleTopicInput topic_input{.article = article};
     for (const std::string& author_id : work.author_ids) {
       const auto it = dense_ids.find(author_id);
       if (it != dense_ids.end()) {
         links.push_back(domain::AuthorArticle{.author_id = it->second,
                                               .article_id = work.openalex_id});
+        topic_input.author_ids.push_back(it->second);
       }
     }
+    articles.push_back(std::move(article));
+    topic_inputs.push_back(std::move(topic_input));
   }
 
   auto saved = repository_.SaveGraph(stored_authors, edges, articles, links);
@@ -336,13 +362,34 @@ Result<domain::IngestResult> IngestService::Run() {
     return std::unexpected(saved.error());
   }
 
-  auto memberships = ComputeMemberships(edges);
+  spdlog::info("Ingest: running Leiden on {} edges", edges.size());
+  auto memberships = ComputeLeidenMemberships(edges);
   if (!memberships) {
     return std::unexpected(memberships.error());
   }
-  auto communities_saved = communities_.ReplaceMemberships(*memberships);
+  const std::vector<domain::CommunityTopic> community_topics =
+      ComputeCommunityTopics(*memberships, topic_inputs,
+                             domain::CommunityAlgorithm::kLeiden);
+  auto communities_saved =
+      communities_.SaveLeidenResults(*memberships, community_topics);
   if (!communities_saved) {
     return std::unexpected(communities_saved.error());
+  }
+
+  spdlog::info(
+      "Ingest: running SNAP BigCLAM on {} edges (communities={}, threads={})",
+      edges.size(), config_.bigclam_communities, config_.bigclam_threads);
+  auto bigclam_memberships = ComputeBigClamMemberships(edges, config_);
+  if (!bigclam_memberships) {
+    return std::unexpected(bigclam_memberships.error());
+  }
+  const std::vector<domain::CommunityTopic> bigclam_topics =
+      ComputeCommunityTopics(*bigclam_memberships, topic_inputs,
+                             domain::CommunityAlgorithm::kBigClam);
+  auto bigclam_saved =
+      communities_.SaveBigClamResults(*bigclam_memberships, bigclam_topics);
+  if (!bigclam_saved) {
+    return std::unexpected(bigclam_saved.error());
   }
 
   domain::IngestResult result{};
@@ -352,8 +399,11 @@ Result<domain::IngestResult> IngestService::Run() {
   result.articles = articles.size();
   result.communities = memberships->size();
   spdlog::info(
-      "Ingest: saved {} authors, {} edges, {} articles, {} communities",
-      result.authors, result.edges, result.articles, result.communities);
+      "Ingest: saved Leiden run {} ({} memberships) and BigCLAM run {} "
+      "({} memberships); {} authors, {} edges, {} articles",
+      *communities_saved,
+      memberships->size(), *bigclam_saved, bigclam_memberships->size(),
+      result.authors, result.edges, result.articles);
   return result;
 }
 

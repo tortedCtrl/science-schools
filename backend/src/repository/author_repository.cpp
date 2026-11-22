@@ -54,7 +54,10 @@ Result<std::vector<domain::AuthorSummary>> AuthorRepository::ListAuthors() {
       SELECT a.id, a.openalex_id, a.name, ac.community_id,
              a.institution_name, COALESCE(wd.weighted_degree, 0)
       FROM authors a
-      LEFT JOIN author_communities ac ON ac.author_id = a.id
+      LEFT JOIN author_communities ac
+        ON ac.author_id = a.id
+       AND ac.run_id = (SELECT MAX(id) FROM clustering_runs
+                        WHERE algorithm = 'leiden')
       LEFT JOIN weighted_degrees wd ON wd.author_id = a.id
       ORDER BY a.id
     )sql";
@@ -84,7 +87,10 @@ Result<std::optional<domain::AuthorCard>> AuthorRepository::GetAuthorCard(
              a.institution_name, COALESCE(wd.weighted_degree, 0),
              art.id, art.title, art.year
       FROM authors a
-      LEFT JOIN author_communities ac ON ac.author_id = a.id
+      LEFT JOIN author_communities ac
+        ON ac.author_id = a.id
+       AND ac.run_id = (SELECT MAX(id) FROM clustering_runs
+                        WHERE algorithm = 'leiden')
       LEFT JOIN weighted_degrees wd ON wd.author_id = a.id
       LEFT JOIN author_to_article ata ON ata.author_id = a.id
       LEFT JOIN author_meta_articles art ON art.id = ata.article_id

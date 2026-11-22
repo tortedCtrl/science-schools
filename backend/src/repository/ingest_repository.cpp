@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <exception>
+#include <limits>
 #include <span>
 #include <string>
 #include <vector>
@@ -52,7 +53,7 @@ void InsertAuthors(soci::session& sql,
   }
 }
 
-void InsertEdges(soci::session& sql, std::span<const domain::Edge> edges) {
+Status InsertEdges(soci::session& sql, std::span<const domain::Edge> edges) {
   std::vector<std::int32_t> sources;
   std::vector<std::int32_t> targets;
   std::vector<std::int32_t> weights;
@@ -60,9 +61,15 @@ void InsertEdges(soci::session& sql, std::span<const domain::Edge> edges) {
   targets.reserve(edges.size());
   weights.reserve(edges.size());
   for (const domain::Edge& edge : edges) {
+    if (edge.weight < 0 ||
+        edge.weight > std::numeric_limits<std::int32_t>::max()) {
+      return MakeError(Errc::kInvalidArgument,
+                       "edge weight {} is outside the database range",
+                       edge.weight);
+    }
     sources.push_back(edge.source);
     targets.push_back(edge.target);
-    weights.push_back(edge.weight);
+    weights.push_back(static_cast<std::int32_t>(edge.weight));
   }
 
   for (std::size_t offset = 0; offset < sources.size();
@@ -80,6 +87,7 @@ void InsertEdges(soci::session& sql, std::span<const domain::Edge> edges) {
          soci::use(weight_chunk));
     statement.execute(true);
   }
+  return {};
 }
 
 void InsertArticles(soci::session& sql,
@@ -136,6 +144,75 @@ void InsertAuthorArticles(soci::session& sql,
   }
 }
 
+void InsertArticleTopics(
+    soci::session& sql,
+    std::span<const domain::Article> articles) {
+  std::vector<std::string> article_ids;
+  std::vector<std::string> topic_ids;
+  std::vector<std::string> topic_names;
+  std::vector<double> scores;
+  std::vector<std::int32_t> is_primary;
+  std::vector<std::string> subfield_ids;
+  std::vector<std::string> subfield_names;
+  std::vector<std::string> field_ids;
+  std::vector<std::string> field_names;
+  std::vector<std::string> domain_ids;
+  std::vector<std::string> domain_names;
+
+  for (const domain::Article& article : articles) {
+    for (const domain::ArticleTopic& topic : article.topics) {
+      article_ids.push_back(article.openalex_id);
+      topic_ids.push_back(topic.topic_id);
+      topic_names.push_back(topic.name);
+      scores.push_back(topic.score);
+      is_primary.push_back(topic.is_primary ? 1 : 0);
+      subfield_ids.push_back(topic.subfield.id);
+      subfield_names.push_back(topic.subfield.name);
+      field_ids.push_back(topic.field.id);
+      field_names.push_back(topic.field.name);
+      domain_ids.push_back(topic.domain.id);
+      domain_names.push_back(topic.domain.name);
+    }
+  }
+
+  for (std::size_t offset = 0; offset < article_ids.size();
+       offset += kBulkChunkSize) {
+    const std::size_t end =
+        std::min(offset + kBulkChunkSize, article_ids.size());
+
+    auto article_chunk = Slice(article_ids, offset, end);
+    auto topic_id_chunk = Slice(topic_ids, offset, end);
+    auto topic_name_chunk = Slice(topic_names, offset, end);
+    auto score_chunk = Slice(scores, offset, end);
+    auto primary_chunk = Slice(is_primary, offset, end);
+    auto subfield_id_chunk = Slice(subfield_ids, offset, end);
+    auto subfield_name_chunk = Slice(subfield_names, offset, end);
+    auto field_id_chunk = Slice(field_ids, offset, end);
+    auto field_name_chunk = Slice(field_names, offset, end);
+    auto domain_id_chunk = Slice(domain_ids, offset, end);
+    auto domain_name_chunk = Slice(domain_names, offset, end);
+
+    soci::statement statement =
+        (sql.prepare
+             << "INSERT INTO article_topics "
+                "(article_id, topic_id, topic_name, score, is_primary, "
+                "subfield_id, subfield_name, field_id, field_name, "
+                "domain_id, domain_name) "
+                "VALUES (:article_id, :topic_id, :topic_name, :score, "
+                ":is_primary <> 0, :subfield_id, :subfield_name, :field_id, "
+                ":field_name, :domain_id, :domain_name) "
+                "ON CONFLICT (article_id, topic_id) DO NOTHING",
+         soci::use(article_chunk), soci::use(topic_id_chunk),
+         soci::use(topic_name_chunk), soci::use(score_chunk),
+         soci::use(primary_chunk), soci::use(subfield_id_chunk),
+         soci::use(subfield_name_chunk), soci::use(field_id_chunk),
+         soci::use(field_name_chunk), soci::use(domain_id_chunk),
+         soci::use(domain_name_chunk));
+
+    statement.execute(true);
+  }
+}
+
 }  // namespace
 
 Status IngestRepository::ClearImportData() {
@@ -147,9 +224,12 @@ Status IngestRepository::ClearImportData() {
   soci::session& sql = **session;
   try {
     soci::transaction transaction(sql);
+    sql << "DELETE FROM clustering_runs";
     sql << "DELETE FROM author_communities";
+    sql << "DELETE FROM community_topics";
     sql << "DELETE FROM author_to_article";
     sql << "DELETE FROM coauthorship_edges";
+    sql << "DELETE FROM article_topics";
     sql << "DELETE FROM author_meta_articles";
     sql << "DELETE FROM authors";
     transaction.commit();
@@ -173,8 +253,12 @@ Status IngestRepository::SaveGraph(
   try {
     soci::transaction transaction(sql);
     InsertAuthors(sql, authors);
-    InsertEdges(sql, edges);
+    auto edges_inserted = InsertEdges(sql, edges);
+    if (!edges_inserted) {
+      return std::unexpected(edges_inserted.error());
+    }
     InsertArticles(sql, articles);
+    InsertArticleTopics(sql, articles);
     InsertAuthorArticles(sql, links);
     transaction.commit();
     return {};

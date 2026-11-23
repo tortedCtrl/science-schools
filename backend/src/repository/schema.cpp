@@ -277,6 +277,7 @@ Status EnsureSchema(Database& database) {
 
   soci::session& sql = **session;
   try {
+    sql << "SET client_min_messages TO WARNING";
     soci::transaction transaction(sql);
 
     RenameLegacyTable(sql, "author_communities", "author_communities_legacy",

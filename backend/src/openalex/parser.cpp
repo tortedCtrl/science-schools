@@ -68,9 +68,12 @@ domain::ArticleTopic ParseTopic(const Json& item,
 }
 
 Result<Json> ParseRoot(std::string_view body) {
-  Json root = Json::parse(body, nullptr, false);
-  if (root.is_discarded()) {
-    return MakeError(Errc::kParse, "invalid OpenAlex JSON response");
+  Json root;
+  try {
+    root = Json::parse(body);
+  } catch (const Json::parse_error& error) {
+    return MakeError(Errc::kParse, "invalid OpenAlex JSON response: {}",
+                     error.what());
   }
   if (!root.is_object() || !root.contains("results") ||
       !root["results"].is_array()) {

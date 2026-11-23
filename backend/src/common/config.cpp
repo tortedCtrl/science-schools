@@ -1,13 +1,14 @@
 #include "common/config.hpp"
 
+#include <charconv>
 #include <cmath>
 #include <cstdlib>
-#include <optional>
+#include <fstream>
+#include <nlohmann/json.hpp>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <utility>
-
-#include "common/parse.hpp"
 
 namespace schools {
 namespace {
@@ -29,123 +30,140 @@ Result<std::string> RequiredEnv(const char* name) {
   return std::string(value);
 }
 
-Result<int> EnvInt(const char* name, int fallback, int min_value,
-                   int max_value) {
-  const std::string text = EnvString(name);
-  if (text.empty()) {
-    return fallback;
-  }
-  const auto value = ParseNumber<int>(text, name);
-  if (!value) {
-    return std::unexpected(value.error());
-  }
-  if (*value < min_value || *value > max_value) {
-    return MakeError(Errc::kInvalidArgument,
-                     "value for {} must be between {} and {}", name, min_value,
-                     max_value);
-  }
-  return *value;
-}
-
-Result<double> EnvDouble(const char* name, double fallback, double min_value,
-                         double max_value) {
-  const std::string text = EnvString(name);
-  if (text.empty()) {
-    return fallback;
-  }
-  const auto value = ParseNumber<double>(text, name);
-  if (!value) {
-    return std::unexpected(value.error());
-  }
-  if (!std::isfinite(*value) || *value < min_value || *value > max_value) {
-    return MakeError(Errc::kInvalidArgument,
-                     "value for {} must be between {} and {}", name, min_value,
-                     max_value);
-  }
-  return *value;
-}
-
-Result<bool> EnvBool(const char* name, bool fallback) {
-  const std::string text = EnvString(name);
-  if (text.empty()) {
-    return fallback;
-  }
-  if (text == "1" || text == "true" || text == "TRUE" || text == "yes") {
-    return true;
-  }
-  if (text == "0" || text == "false" || text == "FALSE" || text == "no") {
-    return false;
-  }
-  return MakeError(Errc::kInvalidArgument, "invalid boolean value for {}: {}",
-                   name, text);
-}
-
 template <typename T>
-void Apply(std::optional<Error>& error, T& target, Result<T> value) {
-  if (error.has_value()) {
+T ReadValue(const nlohmann::json& json, const char* name) {
+  return json.at(name).get<T>();
+}
+
+void ValidateRange(int value, const char* name, int min_value, int max_value) {
+  if (value < min_value || value > max_value) {
+    throw std::invalid_argument(
+        fmt::format("value for {} must be between {} and {}", name, min_value,
+                    max_value));
+  }
+}
+
+void ValidateLogLevel(const std::string& value) {
+  if (value != "trace" && value != "debug" && value != "info" &&
+      value != "warning" && value != "warn" && value != "error" &&
+      value != "err" && value != "critical" && value != "off") {
+    throw std::invalid_argument(
+        fmt::format("unsupported log_level: {}", value));
+  }
+}
+
+void OverrideStringFromEnv(std::string& value, const char* name) {
+  const char* env_value = std::getenv(name);
+  if (env_value != nullptr && *env_value != '\0') {
+    value = env_value;
+  }
+}
+
+void OverrideIntFromEnv(int& value, const char* name, int min_value,
+                        int max_value) {
+  const char* env_value = std::getenv(name);
+  if (env_value == nullptr || *env_value == '\0') {
     return;
   }
-  if (value.has_value()) {
-    target = std::move(*value);
-    return;
+
+  int parsed{};
+  const std::string_view text{env_value};
+  const auto [end, error] =
+      std::from_chars(text.data(), text.data() + text.size(), parsed);
+  if (error != std::errc{} || end != text.data() + text.size()) {
+    throw std::invalid_argument(
+        fmt::format("invalid value for {}: {}", name, text));
   }
-  error = std::move(value.error());
+  value = parsed;
+  ValidateRange(value, name, min_value, max_value);
+}
+
+void ValidateDoubleRange(double value, const char* name, double min_value,
+                         double max_value) {
+  if (!std::isfinite(value) || value < min_value || value > max_value) {
+    throw std::invalid_argument(
+        fmt::format("value for {} must be between {} and {}", name, min_value,
+                    max_value));
+  }
 }
 
 }  // namespace
 
-Result<Config> Config::FromEnv() {
+Result<Config> Config::Load() {
   auto connection = RequiredEnv("ConnectionStrings__DefaultConnection");
   if (!connection) {
     return std::unexpected(connection.error());
   }
 
-  Config config{};
-  config.db_connection = std::move(*connection);
-
-  std::optional<Error> error;
-  Apply(error, config.db_pool_size,
-        EnvInt("DB_POOL_SIZE", config.db_pool_size, 1, 128));
-
-  config.log_level = EnvString("LOG_LEVEL", config.log_level);
-  config.backend_host = EnvString("BACKEND_HOST", config.backend_host);
-  Apply(error, config.backend_port,
-        EnvInt("BACKEND_PORT", config.backend_port, 1, 65535));
-  config.frontend_port = EnvString("FRONTEND_PORT", config.frontend_port);
-
-  Apply(error, config.ingest_max_authors,
-        EnvInt("INGEST_MAX_AUTHORS", config.ingest_max_authors, 1, 100000));
-  Apply(error, config.ingest_author_page_size,
-        EnvInt("INGEST_AUTHOR_PAGE_SIZE", config.ingest_author_page_size, 1,
-               200));
-  Apply(error, config.ingest_work_page_size,
-        EnvInt("INGEST_WORK_PAGE_SIZE", config.ingest_work_page_size, 1, 200));
-  Apply(error, config.ingest_work_pages,
-        EnvInt("INGEST_WORK_PAGES", config.ingest_work_pages, 1, 1000));
-  Apply(error, config.ingest_work_batch_size,
-        EnvInt("INGEST_WORK_BATCH_SIZE", config.ingest_work_batch_size, 1, 50));
-  Apply(error, config.ingest_concurrency,
-        EnvInt("INGEST_CONCURRENCY", config.ingest_concurrency, 1, 64));
-  Apply(error, config.ingest_on_start,
-        EnvBool("INGEST_ON_START", config.ingest_on_start));
-  config.bigclam_binary =
-      EnvString("BIGCLAM_BINARY", config.bigclam_binary);
-  Apply(error, config.bigclam_communities,
-        EnvInt("BIGCLAM_COMMUNITIES", config.bigclam_communities, 1, 100000));
-  Apply(error, config.bigclam_threads,
-        EnvInt("BIGCLAM_THREADS", config.bigclam_threads, 1, 256));
-
-  Apply(error, config.openalex_rps,
-        EnvDouble("OPENALEX_RPS", config.openalex_rps, 0.1, 100.0));
-  Apply(error, config.openalex_max_retries,
-        EnvInt("OPENALEX_MAX_RETRIES", config.openalex_max_retries, 0, 20));
-  config.openalex_mailto = EnvString("OPENALEX_MAILTO");
-  config.openalex_api_key = EnvString("OPENALEX_API_KEY");
-
-  if (error.has_value()) {
-    return std::unexpected(std::move(*error));
+  const std::string config_path = EnvString("CONFIG_PATH", "config.json");
+  std::ifstream file(config_path);
+  if (!file) {
+    return MakeError(Errc::kInvalidArgument,
+                     "cannot open configuration file: {}", config_path);
   }
-  return config;
+
+  try {
+    const nlohmann::json json = nlohmann::json::parse(file);
+    Config config{};
+    config.db_connection = std::move(*connection);
+
+    config.db_pool_size = ReadValue<int>(json, "db_pool_size");
+    config.log_level = ReadValue<std::string>(json, "log_level");
+    config.backend_host = ReadValue<std::string>(json, "backend_host");
+    config.backend_port = ReadValue<int>(json, "backend_port");
+    config.frontend_port = ReadValue<std::string>(json, "frontend_port");
+
+    config.ingest_max_authors = ReadValue<int>(json, "ingest_max_authors");
+    config.ingest_author_page_size =
+        ReadValue<int>(json, "ingest_author_page_size");
+    config.ingest_work_page_size =
+        ReadValue<int>(json, "ingest_work_page_size");
+    config.ingest_work_pages = ReadValue<int>(json, "ingest_work_pages");
+    config.ingest_work_batch_size =
+        ReadValue<int>(json, "ingest_work_batch_size");
+    config.ingest_concurrency = ReadValue<int>(json, "ingest_concurrency");
+    config.download_authors = ReadValue<bool>(json, "download_authors");
+    config.bigclam_binary = ReadValue<std::string>(json, "bigclam_binary");
+    config.bigclam_communities =
+        ReadValue<int>(json, "bigclam_communities");
+    config.bigclam_threads = ReadValue<int>(json, "bigclam_threads");
+
+    config.openalex_rps = ReadValue<double>(json, "openalex_rps");
+    config.openalex_max_retries = ReadValue<int>(json, "openalex_max_retries");
+    config.openalex_mailto = EnvString("OPENALEX_MAILTO");
+    config.openalex_api_key = EnvString("OPENALEX_API_KEY");
+
+    OverrideStringFromEnv(config.log_level, "LOG_LEVEL");
+    OverrideStringFromEnv(config.backend_host, "BACKEND_HOST");
+    OverrideStringFromEnv(config.frontend_port, "FRONTEND_PORT");
+    OverrideIntFromEnv(config.db_pool_size, "DB_POOL_SIZE", 1, 128);
+    OverrideIntFromEnv(config.backend_port, "BACKEND_PORT", 1, 65535);
+
+    ValidateRange(config.db_pool_size, "db_pool_size", 1, 128);
+    ValidateRange(config.backend_port, "backend_port", 1, 65535);
+    ValidateLogLevel(config.log_level);
+    ValidateRange(config.ingest_max_authors, "ingest_max_authors", 1, 100000);
+    ValidateRange(config.ingest_author_page_size, "ingest_author_page_size", 1,
+                  200);
+    ValidateRange(config.ingest_work_page_size, "ingest_work_page_size", 1,
+                  200);
+    ValidateRange(config.ingest_work_pages, "ingest_work_pages", 1, 1000);
+    ValidateRange(config.ingest_work_batch_size, "ingest_work_batch_size", 1,
+                  50);
+    ValidateRange(config.ingest_concurrency, "ingest_concurrency", 1, 64);
+    ValidateRange(config.bigclam_communities, "bigclam_communities", 1, 100000);
+    ValidateRange(config.bigclam_threads, "bigclam_threads", 1, 256);
+    ValidateRange(config.openalex_max_retries, "openalex_max_retries", 0, 20);
+    ValidateDoubleRange(config.openalex_rps, "openalex_rps", 0.1, 100.0);
+    return config;
+  } catch (const nlohmann::json::exception& error) {
+    return MakeError(Errc::kInvalidArgument,
+                     "invalid configuration file {}: {}", config_path,
+                     error.what());
+  } catch (const std::invalid_argument& error) {
+    return MakeError(Errc::kInvalidArgument,
+                     "invalid configuration value: {}", error.what());
+  }
 }
 
 }  // namespace schools

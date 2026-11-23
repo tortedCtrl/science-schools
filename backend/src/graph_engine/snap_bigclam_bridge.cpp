@@ -15,7 +15,7 @@ SnapRunResult RunSnapBigClam(const std::vector<SnapEdge>& edges,
                             int communities, int threads) {
   SnapRunResult result;
   try {
-    PUNGraph graph = TUNGraph::New();
+    const PUNGraph graph = TUNGraph::New();
     std::set<std::int32_t> ids;
     for (const auto& edge : edges) {
       ids.insert(edge.source);
@@ -34,14 +34,16 @@ SnapRunResult RunSnapBigClam(const std::vector<SnapEdge>& edges,
 
     TAGMFast model(graph, 10, 10);
     model.NeighborComInit(communities);
-    constexpr double threshold = 0.0001;
-    constexpr double alpha = 0.05;
-    constexpr double beta = 0.3;
+    constexpr double kThreshold = 0.0001;
+    constexpr double kAlpha = 0.05;
+    constexpr double kBeta = 0.3;
     if (threads == 1 || graph->GetEdges() < 1000) {
-      model.MLEGradAscent(threshold, 1000 * graph->GetNodes(), "", alpha, beta);
+      model.MLEGradAscent(kThreshold, 1000 * graph->GetNodes(), "", kAlpha,
+                          kBeta);
     } else {
       // Use the same argument order as examples/bigclam/bigclam.cpp.
-      model.MLEGradAscentParallel(threshold, 1000, threads, "", alpha, beta);
+      model.MLEGradAscentParallel(kThreshold, 1000, threads, "", kAlpha,
+                                  kBeta);
     }
 
     TVec<TIntV> clusters;

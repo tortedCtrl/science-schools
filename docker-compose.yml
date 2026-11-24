@@ -36,6 +36,7 @@ services:
       BACKEND_HOST: 0.0.0.0
       FRONTEND_PORT: ${FRONTEND_PORT}
       CONFIG_PATH: /etc/science-schools/config.json
+      OPENALEX_API_KEY: ${OPENALEX_API_KEY:-}
       
     ports:
       - "${BACKEND_PORT}:${BACKEND_PORT}"

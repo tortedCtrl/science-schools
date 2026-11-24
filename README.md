@@ -92,6 +92,9 @@ backend не обращается к OpenAlex и повторно запуска
 темам, уже сохранённым в PostgreSQL. Путь к файлу можно переопределить через
 `CONFIG_PATH`. Строка подключения и необязательные
 `OPENALEX_MAILTO`/`OPENALEX_API_KEY` остаются переменными окружения.
+Для запросов с ключом добавьте `OPENALEX_API_KEY=ваш_ключ` в корневой `.env`:
+локальный запуск Makefile передаёт переменные из него, а Docker Compose —
+backend-контейнеру. Без ключа OpenAlex используется в бесплатном режиме.
 `BACKEND_HOST`, `BACKEND_PORT`, `FRONTEND_PORT`, `DB_POOL_SIZE` и `LOG_LEVEL`
 также могут переопределять соответствующие значения из JSON. `run_id`
 используется только внутри backend и не является частью HTTP API.

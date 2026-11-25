@@ -84,7 +84,11 @@ void RegisterRoutes(httplib::Server& server, service::QueryService& query) {
                 [](const httplib::Request&, httplib::Response& response) {
                   response.status = 204;
                 });
-
+  server.Options("/graph/neighborhood",
+                [](const httplib::Request&,
+                  httplib::Response& response) {
+                  response.status = 204;
+                });
   server.Options(R"(/clusters/(leiden|bigclam))",
                 [](const httplib::Request&, httplib::Response& response) {
                   response.status = 204;
@@ -139,6 +143,68 @@ void RegisterRoutes(httplib::Server& server, service::QueryService& query) {
                }
                SendBody(response, query.GetGraphJson(algorithm));
              });
+  
+  server.Get(
+      "/graph/neighborhood",
+      [&query](const httplib::Request& request,
+              httplib::Response& response) {
+
+        auto parse_number = [&](const char* name,
+                                std::int32_t& value) -> bool {
+          if (!request.has_param(name)) {
+            return false;
+          }
+
+          const std::string text = request.get_param_value(name);
+
+          const auto [ptr, error] = std::from_chars(
+              text.data(),
+              text.data() + text.size(),
+              value
+          );
+
+          return error == std::errc{} &&
+                ptr == text.data() + text.size();
+        };
+
+        std::int32_t author_id = 0;
+        std::int32_t depth = 0;
+        std::int32_t v_cap = 0;
+
+        const std::string algorithm =
+            request.has_param("algorithm")
+                ? request.get_param_value("algorithm")
+                : "leiden";
+
+        if ((algorithm != "leiden" &&
+            algorithm != "bigclam") ||
+            !parse_number("author_id", author_id) ||
+            !parse_number("depth", depth) ||
+            !parse_number("v_cap", v_cap) ||
+            author_id < 0 ||
+            depth < 0 || depth > 3 ||
+            v_cap < 1 || v_cap > 1000) {
+
+          SendJson(
+              response,
+              R"({"error":"invalid neighborhood parameters"})",
+              400
+          );
+          return;
+        }
+
+        SendBody(
+            response,
+            query.GetNeighborhoodJson(
+                algorithm,
+                author_id,
+                depth,
+                static_cast<std::size_t>(v_cap)
+            )
+        );
+      }
+  );
+
   server.Get(R"(/communities/(leiden|bigclam))",
              [&query](const httplib::Request& request,
                       httplib::Response& response) {
@@ -219,7 +285,7 @@ void RegisterRoutes(httplib::Server& server, service::QueryService& query) {
 
               SendBody(response,
                         query.GetClusterContentJson(algorithm, community_id));
-            });           
+            });         
 }
 
 }  // namespace schools::api

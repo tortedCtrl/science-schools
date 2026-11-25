@@ -124,3 +124,70 @@ export function useCommunityTopics(
         return response.data;
     }, [algorithm, communityId]);
 }
+
+
+export async function fetchNeighborhood(
+    algorithm: 'leiden' | 'bigclam',
+    authorId: number,
+    depth: number,
+    cap: number
+): Promise<GraphResponse> {
+
+    const response = await api.get<ApiGraphResponse>(
+        '/graph/neighborhood',
+        {
+            params: {
+                algorithm: algorithm,
+                author_id: authorId,
+                depth: depth,
+                v_cap: cap,
+            },
+        }
+    );
+
+    const data = response.data;
+
+    if (!data ||
+        !Array.isArray(data.nodes) ||
+        !Array.isArray(data.links)) {
+        throw new Error('Некорректный ответ сервера');
+    }
+    const memberships = new Map<string, number[]>();
+
+    const nodes: GraphNode[] = data.nodes.map((node) => {
+        const id = String(node.id);
+
+        const communityIds = (node.communities ?? [])
+            .map((community) => community.community_id)
+            .filter(Number.isInteger);
+
+        if (
+            communityIds.length === 0 &&
+            node.community_id != null
+        ) {
+            communityIds.push(node.community_id);
+        }
+
+        memberships.set(id, [...new Set(communityIds)]);
+
+        return {
+            id,
+            name: node.name,
+            community_id: communityIds[0] ?? null,
+            type: 'person',
+            location: node.institution_name ? 'RU' : 'INT',
+            info: node.institution_name ?? undefined,
+            val: 1,
+        };
+    });
+
+    const links: GraphLink[] = data.links.map((link) => ({
+        source: String(link.source),
+        target: String(link.target),
+        weight: link.weight,
+        isHidden: false,
+    }));
+
+    return { nodes, links, memberships };
+}
+

@@ -3,6 +3,7 @@ import * as d3 from 'd3-force';
 import {
   useCommunityTopics,
   useGraph,
+  fetchNeighborhood,
   type CommunityTopic,
 } from './hooks/backend';
 import { useHierarchicalGraph } from './hooks/useHierarchicalGraph';
@@ -62,7 +63,11 @@ export default function App() {
     nodes: any[];
     links: any[];
   }>({ nodes: [], links: [] });
-
+  const [searchResult, setSearchResult] = useState<{
+    nodes: any[];
+    links: any[];
+  } | null>(null);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const [rawGraph, setRawGraph] = useState<{
     nodes: any[];
     links: any[];
@@ -194,8 +199,10 @@ export default function App() {
     expandedCommunities
   );
   const currentGraphData =
-    algorithmMode === 'bigclam' ? displayBigClamGraph : graphData;
-
+    searchResult ??
+    (algorithmMode === 'bigclam'
+        ? displayBigClamGraph
+        : graphData);
   const toggleHighlightCluster = () => {
     const enabled = !highlightCluster;
     setHighlightCluster(enabled);
@@ -240,65 +247,104 @@ export default function App() {
     fetchCommunityTopics,
   ]);
 
-  const handleLeidenSearch = async (event?: React.FormEvent) => {
-    if (event) event.preventDefault();
-    if (algorithmMode === 'bigclam') return;
+  const handleGraphSearch = async (event?: React.FormEvent) => {
+    event?.preventDefault();
 
-    const full = await reloadLeidenGraph();
-    const baseLinks = showHiddenLinks
-      ? full.links
-      : full.links.filter((link: any) => !link.isHidden);
+    setSearchError(null);
 
-    if (showAll || !searchName.trim()) {
-      setGraphData({ nodes: full.nodes, links: baseLinks });
-      return;
+    if (showAll) {
+        setSearchResult(null);
+        setSelectedNode(null);
+        return;
     }
 
-    const targetNode = full.nodes.find(
-      (node: any) =>
-        node.name.toLowerCase().includes(searchName.toLowerCase()) ||
-        node.id === searchName
+    const query = searchName.trim().toLowerCase();
+
+    if (!query) {
+        setSearchError('Введите имя или ID автора');
+        return;
+    }
+
+    const nodes =
+        algorithmMode === 'bigclam'
+            ? rawGraph.nodes
+            : fullGraphData.nodes;
+
+    const byId = nodes.filter(
+        (node: any) => String(node.id) === query
     );
-    if (!targetNode) {
-      setGraphData({ nodes: [], links: [] });
-      setSelectedNode(null);
-      return;
-    }
 
-    setSelectedNode(targetNode);
-    const visited = new Set<string>([targetNode.id]);
-    let current = new Set<string>([targetNode.id]);
-
-    for (let depth = 0; depth < searchDepth; depth++) {
-      const next = new Set<string>();
-      baseLinks.forEach((link: any) => {
-        const source = getLinkId(link.source);
-        const target = getLinkId(link.target);
-        if (current.has(source) && !visited.has(target)) {
-          visited.add(target);
-          next.add(target);
-        }
-        if (current.has(target) && !visited.has(source)) {
-          visited.add(source);
-          next.add(source);
-        }
-      });
-      if (!next.size) break;
-      current = next;
-    }
-
-    const filteredLinks = baseLinks.filter((link: any) => {
-      const source = getLinkId(link.source);
-      const target = getLinkId(link.target);
-      return visited.has(source) && visited.has(target);
-    });
-    let filteredNodes = full.nodes.filter((node: any) =>
-      visited.has(node.id)
+    const byExactName = nodes.filter(
+        (node: any) =>
+            String(node.name).toLowerCase() === query
     );
-    if (vCap !== '' && filteredNodes.length > vCap) {
-      filteredNodes = filteredNodes.slice(0, vCap);
+
+    const byPartName = nodes.filter(
+        (node: any) =>
+            String(node.name).toLowerCase().includes(query)
+    );
+
+    const matches = byId.length > 0
+        ? byId
+        : byExactName.length > 0
+            ? byExactName
+            : byPartName;
+
+    if (matches.length === 0) {
+        setSearchError('Автор не найден');
+        return;
     }
-    setGraphData({ nodes: filteredNodes, links: filteredLinks });
+
+    if (matches.length > 1) {
+        setSearchError(
+            'Найдено несколько авторов. Введите точный ID.'
+        );
+        return;
+    }
+
+    const author = matches[0];
+
+    const cap = vCap === '' ? 1000 : vCap;
+
+    if (!Number.isInteger(cap) || cap < 1 || cap > 1000) {
+        setSearchError('V_cap должен быть от 1 до 1000');
+        return;
+    }
+
+    setLoading(true);
+
+    try {
+        const result = await fetchNeighborhood(
+            algorithmMode,
+            Number(author.id),
+            searchDepth,
+            cap
+        );
+
+        setSearchResult({
+            nodes: result.nodes,
+            links: result.links,
+        });
+        const selected = result.nodes.find(
+            (node: any) => node.id === String(author.id)
+        );
+
+        setSelectedNode(selected ?? null);
+
+        setGraphStatus(
+            result.nodes.length > 0 ? 'ready' : 'empty'
+        );
+
+    } catch (error) {
+        console.error('Neighborhood API error:', error);
+
+        setSearchError(
+            'Не удалось выполнить поиск на сервере'
+        );
+
+    } finally {
+        setLoading(false);
+    }
   };
 
   const toggleHiddenLinks = (checked: boolean) => {
@@ -327,11 +373,12 @@ export default function App() {
 
   const handleShowAllChange = (checked: boolean) => {
     setShowAll(checked);
-    if (algorithmMode === 'leiden' && checked) {
-      setSearchName('');
-      reloadLeidenGraph();
+    setSearchError(null);
+    if (checked) {
+        setSearchResult(null);
+        setSelectedNode(null);
     }
-  };
+};
 
   useEffect(() => {
     if (algorithmMode !== 'bigclam') return;
@@ -486,7 +533,7 @@ export default function App() {
         vCap={vCap}
         setVCap={setVCap}
         loading={loading}
-        onSubmit={handleLeidenSearch}
+        onSubmit={handleGraphSearch}
         showHiddenLinks={showHiddenLinks}
         onToggleHiddenLinks={toggleHiddenLinks}
         colorMode={colorMode}
@@ -497,6 +544,9 @@ export default function App() {
         onAlgorithmModeChange={(mode) => {
           if (mode === algorithmMode) return;
           setAlgorithmMode(mode);
+          setSearchResult(null);
+          setSearchError(null);
+          setShowAll(true);
           setSelectedNode(null);
           setExpandedCommunities(new Set());
           setRawGraph({ nodes: [], links: [] });
@@ -523,7 +573,7 @@ export default function App() {
               : undefined
           }
           onRenderFramePost={
-            algorithmMode === 'bigclam'
+            algorithmMode === 'bigclam' && searchResult === null
               ? (ctx) =>
                   drawCommunityHulls({
                     ctx,
@@ -578,6 +628,11 @@ export default function App() {
             {algorithmMode === 'bigclam'
               ? 'Результаты BigCLAM ещё не рассчитаны или отсутствуют'
               : 'Данные отсутствуют или ещё обрабатываются сервером'}
+          </div>
+        )}
+        {searchError && !loading && (
+          <div className="graph-status graph-status-error">
+              {searchError}
           </div>
         )}
       </div>

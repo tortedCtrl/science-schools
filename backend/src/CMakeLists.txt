@@ -3,6 +3,7 @@ add_library(backend_core STATIC)
 target_sources(
     backend_core
     PRIVATE
+    graph_engine/neighborhood_bfs.cpp
     service/community_topic_aggregator.cpp
     api/routes.cpp
     common/config.cpp

@@ -104,7 +104,7 @@ export function SearchPanel({
             <label>Глубина поиска (слои): {searchDepth}</label>
             <input
               type="range"
-              min="1"
+              min="0"
               max="3"
               value={searchDepth}
               disabled={showAll}

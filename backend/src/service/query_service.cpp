@@ -1,5 +1,6 @@
 #include "service/query_service.hpp"
-
+#include "graph_engine/neighborhood_bfs.hpp"
+#include <algorithm>
 #include <cstdint>
 #include <nlohmann/json.hpp>
 #include <string>
@@ -184,9 +185,9 @@ Result<std::string> QueryService::ListAuthorsJson() {
   }
   return result.dump();
 }
-
-Result<std::string> QueryService::GetAuthorCardJson(std::int32_t author_id) {
-  auto card = authors_.GetAuthorCard(author_id);
+Result<std::string> QueryService::GetAuthorCardJson(std::int32_t author_id)
+{
+    auto card = authors_.GetAuthorCard(author_id);
   if (!card) {
     return std::unexpected(card.error());
   }
@@ -229,16 +230,11 @@ Result<std::string> QueryService::ListEdgesJson() {
   return result.dump();
 }
 
-Result<std::string> QueryService::GetGraphJson(std::string_view algorithm) {
-  auto graph = graph_.GetGraph(algorithm);
-  if (!graph) {
-    return std::unexpected(graph.error());
-  }
-
+std::string QueryService::SerializeGraph(const domain::GraphData& graph_data, std::string_view algorithm) {
   std::unordered_map<std::int32_t,
                      std::vector<domain::CommunityMembershipDto>>
       memberships_by_author;
-  for (const domain::Membership& membership : graph->memberships) {
+  for (const domain::Membership& membership : graph_data.memberships) {
     memberships_by_author[membership.author_id].push_back(
         {.community_id = membership.community_id});
   }
@@ -250,8 +246,8 @@ Result<std::string> QueryService::GetGraphJson(std::string_view algorithm) {
                                             : domain::CommunityAlgorithm::kLeiden,
                                     .nodes = {},
                                     .links = {}};
-  response.nodes.reserve(graph->nodes.size());
-  for (const domain::AuthorSummary& author : graph->nodes) {
+  response.nodes.reserve(graph_data.nodes.size());
+  for (const domain::AuthorSummary& author : graph_data.nodes) {
     auto memberships = memberships_by_author.find(author.id);
     response.nodes.push_back(
         {.id = std::to_string(author.id),
@@ -264,13 +260,20 @@ Result<std::string> QueryService::GetGraphJson(std::string_view algorithm) {
          .weighted_degree = author.weighted_degree});
   }
 
-  response.links.reserve(graph->links.size());
-  for (const domain::Edge& edge : graph->links) {
+  response.links.reserve(graph_data.links.size());
+  for (const domain::Edge& edge : graph_data.links) {
     response.links.push_back({.source = std::to_string(edge.source),
                               .target = std::to_string(edge.target),
                               .weight = edge.weight});
   }
   return GraphJson(response).dump();
+}
+
+Result<std::string> QueryService::GetGraphJson(std::string_view algorithm) {
+  auto full = graph_.GetGraph(algorithm);
+  if (!full) 
+    return std::unexpected(full.error());
+  return SerializeGraph(*full, algorithm);
 }
 
 Result<std::string> QueryService::ListCommunitiesJson(
@@ -357,5 +360,54 @@ Result<std::string> QueryService::GetClusterContentJson(
 
   return ClusterContentJson(*cluster).dump();
 }
+
+
+Result<std::string> QueryService::GetNeighborhoodJson(
+    std::string_view algorithm,
+    std::int32_t author_id,
+    int depth,
+    std::size_t v_cap
+) {
+    if ((algorithm != "leiden" &&
+         algorithm != "bigclam") ||
+        author_id < 0 ||
+        depth < 0 || depth > 3 ||
+        v_cap == 0 || v_cap > 1000) {
+
+        return MakeError(
+            Errc::kInvalidArgument,
+            "invalid neighborhood parameters"
+        );
+    }
+
+    auto full = graph_.GetGraph(algorithm);
+
+    if (!full) {
+        return std::unexpected(full.error());
+    }
+
+    const bool exists = std::any_of(
+        full->nodes.begin(),
+        full->nodes.end(),
+        [author_id](const auto& node) {
+            return node.id == author_id;
+        }
+    );
+
+    if (!exists) {
+        return MakeError(
+            Errc::kNotFound,
+            "author {} not found",
+            author_id
+        );
+    }
+
+    auto result = graph::NeighborhoodBfs(
+        *full, author_id, depth, v_cap
+    );
+
+    return SerializeGraph(result, algorithm);
+}
+
 
 }  // namespace schools::service

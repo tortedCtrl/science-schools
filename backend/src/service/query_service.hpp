@@ -3,7 +3,8 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
-
+#include <cstddef>
+#include "domain/models.hpp"
 #include "common/error.hpp"
 #include "repository/author_repository.hpp"
 #include "repository/community_repository.hpp"
@@ -33,8 +34,9 @@ class QueryService {
                                               std::string_view topic_id);
   Result<std::string> GetClusterContentJson(std::string_view algorithm,
                                             std::int32_t community_id);
-
+  Result<std::string> GetNeighborhoodJson(std::string_view algorithm, std::int32_t author_id, int depth, std::size_t v_cap);
  private:
+  std::string SerializeGraph(const domain::GraphData& graph_data, std::string_view algorithm);
   repository::AuthorRepository& authors_;
   repository::GraphRepository& graph_;
   repository::CommunityRepository& communities_;

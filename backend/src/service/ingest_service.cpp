@@ -77,7 +77,7 @@ Result<std::vector<domain::Membership>> ComputeBigClamMemberships(
     return std::vector<domain::Membership>{};
   }
   return graph::BigClamWrapper::Run(
-      edges, std::filesystem::path{config.bigclam_binary},
+      edges,
       config.bigclam_communities, config.bigclam_threads);
 }
 

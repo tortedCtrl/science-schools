@@ -27,7 +27,6 @@ struct Config {
   int ingest_work_batch_size;
   int ingest_concurrency;
   bool download_authors;
-  std::string bigclam_binary;
   int bigclam_communities;
   int bigclam_threads;
 

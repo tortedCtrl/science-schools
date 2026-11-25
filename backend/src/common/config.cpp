@@ -124,7 +124,6 @@ Result<Config> Config::Load() {
         ReadValue<int>(json, "ingest_work_batch_size");
     config.ingest_concurrency = ReadValue<int>(json, "ingest_concurrency");
     config.download_authors = ReadValue<bool>(json, "download_authors");
-    config.bigclam_binary = ReadValue<std::string>(json, "bigclam_binary");
     config.bigclam_communities =
         ReadValue<int>(json, "bigclam_communities");
     config.bigclam_threads = ReadValue<int>(json, "bigclam_threads");

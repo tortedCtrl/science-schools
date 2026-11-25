@@ -12,8 +12,7 @@
   "ingest_work_batch_size": 50,
   "ingest_concurrency": 16,
   "download_authors": true,
-  "bigclam_binary": "/usr/local/bin/bigclam",
-  "bigclam_communities": 50,
+  "bigclam_communities": 10,
   "bigclam_threads": 1,
   "openalex_rps": 5.0,
   "openalex_max_retries": 10

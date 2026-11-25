@@ -105,8 +105,13 @@ jobs:
         run: |
           set -euo pipefail
           # Clang 20 calls its C++26 draft language mode c++2c.
-          find backend/src backend/apps -type f -name '*.cpp' -print0 | \
+          find backend/src backend/apps -type f -name '*.cpp' \
+            ! -path 'backend/src/graph_engine/snap_bigclam_bridge.cpp' -print0 | \
             xargs -0 -r -n 1 -P "$(nproc)" clang-tidy-20 \
             --warnings-as-errors='*' \
             --extra-arg=-std=c++2c \
             -p backend/build
+          clang-tidy-20 \
+            --warnings-as-errors='*' \
+            -p backend/build \
+            backend/src/graph_engine/snap_bigclam_bridge.cpp

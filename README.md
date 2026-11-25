@@ -85,7 +85,7 @@ frontend (из директории frontend):
 сообщества и `0.01` для остальных. Поэтому статьи с авторами из нескольких
 сообществ дают ненулевой вклад каждому из них. При ingest-е backend запускает
 эту агрегацию отдельно для Leiden и BigCLAM; результаты обоих алгоритмов
-хранятся отдельно. Параметры backend и алгоритмов, включая `bigclam_binary`,
+хранятся отдельно. Параметры backend и алгоритмов, включая
 `bigclam_communities`, `bigclam_threads` и `download_authors`, задаются в
 [backend/config.json](./backend/config.json). При `download_authors: false`
 backend не обращается к OpenAlex и повторно запускает алгоритмы по графу и

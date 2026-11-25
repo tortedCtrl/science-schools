@@ -382,7 +382,7 @@ Result<domain::ClusterContent> CommunityRepository::GetClusterContent(
                        community_id, algorithm_name);
     }
 
-    const std::int64_t run_id = metadata_it->get<std::int64_t>(0);
+    const auto run_id = metadata_it->get<std::int64_t>(0);
     content.member_count = metadata_it->get<std::int32_t>(1);
 
     // Получаем авторов кластера.

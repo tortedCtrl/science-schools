@@ -109,6 +109,7 @@ Result<Config> Config::Load() {
 
     config.db_pool_size = ReadValue<int>(json, "db_pool_size");
     config.log_level = ReadValue<std::string>(json, "log_level");
+    config.show_timer_logs = ReadValue<bool>(json, "show_timer_logs");
     config.backend_host = ReadValue<std::string>(json, "backend_host");
     config.backend_port = ReadValue<int>(json, "backend_port");
     config.frontend_port = ReadValue<std::string>(json, "frontend_port");

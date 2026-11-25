@@ -293,7 +293,7 @@ Result<domain::IngestResult> IngestService::Run() {
                config_.ingest_max_authors, config_.ingest_concurrency,
                config_.openalex_rps);
   {
-    schools::ScopedTimer timer{"ClearImportData"};
+    const schools::ScopedTimer timer{"ClearImportData", config_.show_timer_logs};
     auto cleared = repository_.ClearImportData();
     if (!cleared) {
       return std::unexpected(cleared.error());
@@ -302,7 +302,7 @@ Result<domain::IngestResult> IngestService::Run() {
 
   std::vector<domain::Author> authors;
   {
-    schools::ScopedTimer timer{"LoadAuthors"};
+    const schools::ScopedTimer timer{"LoadAuthors", config_.show_timer_logs};
     auto loaded = LoadAuthors();
     if (!loaded) {
       return std::unexpected(loaded.error());
@@ -321,7 +321,7 @@ Result<domain::IngestResult> IngestService::Run() {
 
   std::vector<domain::Work> works;
   {
-    schools::ScopedTimer timer{"LoadWorks"};
+    const schools::ScopedTimer timer{"LoadWorks", config_.show_timer_logs};
     auto loaded = LoadWorks(authors);
     if (!loaded) {
       return std::unexpected(loaded.error());
@@ -336,7 +336,8 @@ Result<domain::IngestResult> IngestService::Run() {
   std::vector<domain::AuthorArticle> links;
   std::vector<domain::ArticleTopicInput> topic_inputs;
   {
-    schools::ScopedTimer timer{"BuildGraphAndEdges"};
+    const schools::ScopedTimer timer{"BuildGraphAndEdges",
+                                     config_.show_timer_logs};
     std::map<EdgeKey, std::int32_t> edge_weights;
     for (const domain::Work& work : works) {
       for (std::size_t first = 0; first < work.author_ids.size(); ++first) {
@@ -413,7 +414,8 @@ Result<domain::IngestResult> IngestService::Run() {
     }
 
     {
-      schools::ScopedTimer save_timer{"SaveGraph"};
+      const schools::ScopedTimer save_timer{"SaveGraph",
+                                            config_.show_timer_logs};
       auto saved = repository_.SaveGraph(stored_authors, edges, articles, links);
       if (!saved) {
         return std::unexpected(saved.error());
@@ -435,7 +437,7 @@ Result<domain::IngestResult> IngestService::RunFromDatabase() {
   spdlog::info("Download skipped: reusing existing PostgreSQL data");
   std::vector<domain::Edge> edges;
   {
-    schools::ScopedTimer timer{"LoadEdges"};
+    const schools::ScopedTimer timer{"LoadEdges", config_.show_timer_logs};
     auto loaded = graph_.ListEdges();
     if (!loaded) {
       return std::unexpected(loaded.error());
@@ -445,7 +447,8 @@ Result<domain::IngestResult> IngestService::RunFromDatabase() {
 
   std::vector<domain::ArticleTopicInput> topic_inputs;
   {
-    schools::ScopedTimer timer{"LoadArticleTopicInputs"};
+    const schools::ScopedTimer timer{"LoadArticleTopicInputs",
+                                     config_.show_timer_logs};
     auto loaded = graph_.GetArticleTopicInputs();
     if (!loaded) {
       return std::unexpected(loaded.error());
@@ -478,7 +481,8 @@ Result<domain::IngestResult> IngestService::RunAlgorithms(
   std::vector<domain::Membership> memberships;
   std::int64_t communities_saved_leiden = 0;
   {
-    schools::ScopedTimer timer{"LeidenClustering"};
+    const schools::ScopedTimer timer{"LeidenClustering",
+                                     config_.show_timer_logs};
     spdlog::info("Starting Leiden algorithm on {} edges", edges.size());
     auto memberships_result = ComputeLeidenMemberships(edges);
     if (!memberships_result) {
@@ -488,13 +492,15 @@ Result<domain::IngestResult> IngestService::RunAlgorithms(
   }
 
   {
-    schools::ScopedTimer timer{"CommunityTopicsLeiden"};
+    const schools::ScopedTimer timer{"CommunityTopicsLeiden",
+                                     config_.show_timer_logs};
     spdlog::info("Starting topic calculation for Leiden clusters");
     const std::vector<domain::CommunityTopic> community_topics =
         ComputeCommunityTopics(memberships, topic_inputs,
                                domain::CommunityAlgorithm::kLeiden);
     {
-      schools::ScopedTimer save_timer{"SaveLeidenResults"};
+      const schools::ScopedTimer save_timer{"SaveLeidenResults",
+                                            config_.show_timer_logs};
       auto saved =
           communities_.SaveLeidenResults(memberships, community_topics);
       if (!saved) {
@@ -507,7 +513,7 @@ Result<domain::IngestResult> IngestService::RunAlgorithms(
   std::vector<domain::Membership> bigclam_memberships;
   std::int64_t bigclam_saved = 0;
   {
-    schools::ScopedTimer timer{"BigClamRun"};
+    const schools::ScopedTimer timer{"BigClamRun", config_.show_timer_logs};
     spdlog::info(
         "Starting SNAP BigCLAM algorithm on {} edges "
         "(communities={}, threads={})",
@@ -520,13 +526,15 @@ Result<domain::IngestResult> IngestService::RunAlgorithms(
   }
 
   {
-    schools::ScopedTimer timer{"CommunityTopicsBigClam"};
+    const schools::ScopedTimer timer{"CommunityTopicsBigClam",
+                                     config_.show_timer_logs};
     spdlog::info("Starting topic calculation for SNAP BigCLAM clusters");
     const std::vector<domain::CommunityTopic> bigclam_topics =
         ComputeCommunityTopics(bigclam_memberships, topic_inputs,
                                domain::CommunityAlgorithm::kBigClam);
     {
-      schools::ScopedTimer save_timer{"SaveBigClamResults"};
+      const schools::ScopedTimer save_timer{"SaveBigClamResults",
+                                            config_.show_timer_logs};
       auto saved =
           communities_.SaveBigClamResults(bigclam_memberships, bigclam_topics);
       if (!saved) {

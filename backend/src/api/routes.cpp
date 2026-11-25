@@ -54,7 +54,26 @@ void RegisterRoutes(httplib::Server& server, service::QueryService& query) {
              [](const httplib::Request&, httplib::Response& response) {
                SendJson(response, R"({"status":"ok"})");
              });
+  server.Get("/authors/search",
+                [&query](const httplib::Request& request,
+                        httplib::Response& response) {
 
+                    if (!request.has_param("q")) {
+                        SendJson(
+                            response,
+                            R"({"error":"q parameter is required"})",
+                            400
+                        );
+                        return;
+                    }
+
+                    SendBody(
+                        response,
+                        query.SearchAuthorsJson(
+                            request.get_param_value("q")
+                        )
+                    );
+                });
   server.Options("/authors",
                  [](const httplib::Request&, httplib::Response& response) {
                    response.status = 204;
@@ -79,7 +98,11 @@ void RegisterRoutes(httplib::Server& server, service::QueryService& query) {
                  [](const httplib::Request&, httplib::Response& response) {
                    response.status = 204;
                  });
-
+  server.Options("/authors/search",
+                [](const httplib::Request&,
+                  httplib::Response& response) {
+                    response.status = 204;
+                });
   server.Options("/topics",
                 [](const httplib::Request&, httplib::Response& response) {
                   response.status = 204;

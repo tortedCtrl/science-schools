@@ -185,6 +185,41 @@ Result<std::string> QueryService::ListAuthorsJson() {
   }
   return result.dump();
 }
+
+
+Result<std::string> QueryService::SearchAuthorsJson(
+    std::string_view query
+) {
+    if (query.empty() || query.size() > 200) {
+        return MakeError(
+            Errc::kInvalidArgument,
+            "author search must contain 1 to 200 bytes"
+        );
+    }
+
+    auto authors = authors_.SearchAuthors(query);
+
+    if (!authors) {
+        return std::unexpected(authors.error());
+    }
+
+    Json result = Json::array();
+
+    for (const domain::AuthorSummary& author : *authors) {
+        result.push_back({
+            {"id", author.id},
+            {"name", author.name},
+            {"openalex_id", author.openalex_id},
+            {"institution_name", author.institution_name
+                ? Json(*author.institution_name)
+                : Json(nullptr)}
+        });
+    }
+
+    return result.dump();
+}
+
+
 Result<std::string> QueryService::GetAuthorCardJson(std::int32_t author_id)
 {
     auto card = authors_.GetAuthorCard(author_id);

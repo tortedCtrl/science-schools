@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <optional>
 #include <vector>
+#include <string_view>
 
 #include "common/error.hpp"
 #include "domain/models.hpp"
@@ -13,7 +14,7 @@ namespace schools::repository {
 class AuthorRepository {
  public:
   explicit AuthorRepository(Database& database) : database_(database) {}
-
+  Result<std::vector<domain::AuthorSummary>> SearchAuthors(std::string_view query);
   Result<std::vector<domain::AuthorSummary>> ListAuthors();
   Result<std::optional<domain::AuthorCard>> GetAuthorCard(
       std::int32_t author_id);

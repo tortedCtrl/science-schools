@@ -35,6 +35,7 @@ class QueryService {
   Result<std::string> GetClusterContentJson(std::string_view algorithm,
                                             std::int32_t community_id);
   Result<std::string> GetNeighborhoodJson(std::string_view algorithm, std::int32_t author_id, int depth, std::size_t v_cap);
+  Result<std::string> SearchAuthorsJson(std::string_view query);
  private:
   std::string SerializeGraph(const domain::GraphData& graph_data, std::string_view algorithm);
   repository::AuthorRepository& authors_;

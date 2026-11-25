@@ -191,3 +191,27 @@ export async function fetchNeighborhood(
     return { nodes, links, memberships };
 }
 
+export type AuthorSearchResult = {
+    id: number;
+    name: string;
+    openalex_id: string;
+    institution_name: string | null;
+};
+
+export async function searchAuthors(
+    query: string
+): Promise<AuthorSearchResult[]> {
+
+    const response = await api.get<AuthorSearchResult[]>(
+        '/authors/search',
+        {
+            params: { q: query }
+        }
+    );
+
+    if (!Array.isArray(response.data)) {
+        throw new Error('Некорректный ответ поиска авторов');
+    }
+
+    return response.data;
+}

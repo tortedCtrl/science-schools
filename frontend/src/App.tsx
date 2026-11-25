@@ -1,10 +1,11 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import * as d3 from 'd3-force';
 import {
-  useCommunityTopics,
-  useGraph,
-  fetchNeighborhood,
-  type CommunityTopic,
+    useCommunityTopics,
+    useGraph,
+    fetchNeighborhood,
+    searchAuthors,
+    type CommunityTopic,
 } from './hooks/backend';
 import { useHierarchicalGraph } from './hooks/useHierarchicalGraph';
 import { SearchPanel, type AlgorithmMode, type ColorMode } from './components/SearchPanel';
@@ -247,9 +248,9 @@ export default function App() {
     fetchCommunityTopics,
   ]);
 
+  
   const handleGraphSearch = async (event?: React.FormEvent) => {
     event?.preventDefault();
-
     setSearchError(null);
 
     if (showAll) {
@@ -258,51 +259,12 @@ export default function App() {
         return;
     }
 
-    const query = searchName.trim().toLowerCase();
+    const query = searchName.trim();
 
     if (!query) {
         setSearchError('Введите имя или ID автора');
         return;
     }
-
-    const nodes =
-        algorithmMode === 'bigclam'
-            ? rawGraph.nodes
-            : fullGraphData.nodes;
-
-    const byId = nodes.filter(
-        (node: any) => String(node.id) === query
-    );
-
-    const byExactName = nodes.filter(
-        (node: any) =>
-            String(node.name).toLowerCase() === query
-    );
-
-    const byPartName = nodes.filter(
-        (node: any) =>
-            String(node.name).toLowerCase().includes(query)
-    );
-
-    const matches = byId.length > 0
-        ? byId
-        : byExactName.length > 0
-            ? byExactName
-            : byPartName;
-
-    if (matches.length === 0) {
-        setSearchError('Автор не найден');
-        return;
-    }
-
-    if (matches.length > 1) {
-        setSearchError(
-            'Найдено несколько авторов. Введите точный ID.'
-        );
-        return;
-    }
-
-    const author = matches[0];
 
     const cap = vCap === '' ? 1000 : vCap;
 
@@ -311,12 +273,35 @@ export default function App() {
         return;
     }
 
+    setSearchResult(null);
+    setSelectedNode(null);
     setLoading(true);
 
     try {
+        const authors = await searchAuthors(query);
+
+        if (authors.length === 0) {
+            setSearchError('Автор не найден в базе данных');
+            return;
+        }
+
+        if (authors.length > 1) {
+            const suggestions = authors.slice(0, 5)
+                .map((author) => `${author.id} — ${author.name}`)
+                .join('; ');
+
+            setSearchError(
+                `Найдено несколько авторов: ${suggestions}. ` +
+                'Введите нужный ID.'
+            );
+            return;
+        }
+
+        const authorId = authors[0].id;
+
         const result = await fetchNeighborhood(
             algorithmMode,
-            Number(author.id),
+            authorId,
             searchDepth,
             cap
         );
@@ -325,8 +310,9 @@ export default function App() {
             nodes: result.nodes,
             links: result.links,
         });
+
         const selected = result.nodes.find(
-            (node: any) => node.id === String(author.id)
+            (node) => node.id === String(authorId)
         );
 
         setSelectedNode(selected ?? null);
@@ -336,16 +322,14 @@ export default function App() {
         );
 
     } catch (error) {
-        console.error('Neighborhood API error:', error);
+        console.error('Author search / neighborhood API error:', error);
 
-        setSearchError(
-            'Не удалось выполнить поиск на сервере'
-        );
-
+        setSearchError('Не удалось выполнить поиск на сервере');
     } finally {
         setLoading(false);
     }
-  };
+};
+
 
   const toggleHiddenLinks = (checked: boolean) => {
     setShowHiddenLinks(checked);

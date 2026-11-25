@@ -16,6 +16,10 @@
 #include "domain/dto/graph_data.hpp"
 #include "domain/dto/community_summary.hpp"
 #include "domain/dto/api_response.hpp"
+#include "domain/dto/topic_info.hpp"
+#include "domain/dto/cluster_metadata.hpp"
+#include "domain/dto/cluster_by_topic.hpp"
+#include "domain/dto/cluster_content.hpp"
 
 // Internal / Processing Models
 #include "domain/internal/work.hpp"

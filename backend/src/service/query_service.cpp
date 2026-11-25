@@ -116,6 +116,60 @@ Json CommunitySummaryJson(const domain::CommunitySummary& community) {
   return value;
 }
 
+Json TopicInfoJson(const domain::TopicInfo& topic) {
+  Json value;
+  value["topic_id"] = topic.topic_id;
+  value["topic_name"] = topic.topic_name;
+  value["article_count"] = topic.article_count;
+  return value;
+}
+
+Json ClusterMetadataJson(const domain::ClusterMetadata& cluster) {
+  Json value;
+  value["community_id"] = cluster.community_id;
+  value["member_count"] = cluster.member_count;
+  return value;
+}
+
+Json AuthorInClusterJson(const domain::AuthorInCluster& author) {
+  Json value;
+  value["author_id"] = author.author_id;
+  value["openalex_id"] = author.openalex_id;
+  value["name"] = author.name;
+  return value;
+}
+
+Json ClusterByTopicJson(const domain::ClusterByTopic& cluster) {
+  Json value;
+  value["community_id"] = cluster.community_id;
+  value["member_count"] = cluster.member_count;
+  value["authors"] = Json::array();
+
+  for (const domain::AuthorInCluster& author : cluster.authors) {
+    value["authors"].push_back(AuthorInClusterJson(author));
+  }
+
+  return value;
+}
+
+Json ClusterContentJson(const domain::ClusterContent& cluster) {
+  Json value;
+  value["community_id"] = cluster.community_id;
+  value["member_count"] = cluster.member_count;
+
+  value["authors"] = Json::array();
+  for (const domain::AuthorInCluster& author : cluster.authors) {
+    value["authors"].push_back(AuthorInClusterJson(author));
+  }
+
+  value["topics"] = Json::array();
+  for (const domain::TopicInfo& topic : cluster.topics) {
+    value["topics"].push_back(TopicInfoJson(topic));
+  }
+
+  return value;
+}
+
 }  // namespace
 
 Result<std::string> QueryService::ListAuthorsJson() {
@@ -248,6 +302,60 @@ Result<std::string> QueryService::ListCommunityTopicsJson(
                                          .article_count = topic.article_count}));
   }
   return result.dump();
+}
+
+Result<std::string> QueryService::ListAllTopicsJson() {
+  auto topics = communities_.ListAllTopics();
+  if (!topics) {
+    return std::unexpected(topics.error());
+  }
+
+  Json result = Json::array();
+  for (const domain::TopicInfo& topic : *topics) {
+    result.push_back(TopicInfoJson(topic));
+  }
+
+  return result.dump();
+}
+
+Result<std::string> QueryService::ListClusterMetadataJson(
+    std::string_view algorithm) {
+  auto clusters = communities_.ListClusterMetadata(algorithm);
+  if (!clusters) {
+    return std::unexpected(clusters.error());
+  }
+
+  Json result = Json::array();
+  for (const domain::ClusterMetadata& cluster : *clusters) {
+    result.push_back(ClusterMetadataJson(cluster));
+  }
+
+  return result.dump();
+}
+
+Result<std::string> QueryService::ListClustersByTopicJson(
+    std::string_view algorithm, std::string_view topic_id) {
+  auto clusters = communities_.ListClustersByTopic(algorithm, topic_id);
+  if (!clusters) {
+    return std::unexpected(clusters.error());
+  }
+
+  Json result = Json::array();
+  for (const domain::ClusterByTopic& cluster : *clusters) {
+    result.push_back(ClusterByTopicJson(cluster));
+  }
+
+  return result.dump();
+}
+
+Result<std::string> QueryService::GetClusterContentJson(
+    std::string_view algorithm, std::int32_t community_id) {
+  auto cluster = communities_.GetClusterContent(algorithm, community_id);
+  if (!cluster) {
+    return std::unexpected(cluster.error());
+  }
+
+  return ClusterContentJson(*cluster).dump();
 }
 
 }  // namespace schools::service

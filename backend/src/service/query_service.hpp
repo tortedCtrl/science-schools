@@ -27,6 +27,12 @@ class QueryService {
   Result<std::string> ListCommunitiesJson(std::string_view algorithm);
   Result<std::string> ListCommunityTopicsJson(std::string_view algorithm,
                                               std::int32_t community_id);
+  Result<std::string> ListAllTopicsJson();
+  Result<std::string> ListClusterMetadataJson(std::string_view algorithm);
+  Result<std::string> ListClustersByTopicJson(std::string_view algorithm,
+                                              std::string_view topic_id);
+  Result<std::string> GetClusterContentJson(std::string_view algorithm,
+                                            std::int32_t community_id);
 
  private:
   repository::AuthorRepository& authors_;
@@ -35,3 +41,4 @@ class QueryService {
 };
 
 }  // namespace schools::service
+

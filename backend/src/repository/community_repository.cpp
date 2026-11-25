@@ -314,8 +314,7 @@ CommunityRepository::ListClustersByTopic(
     std::map<std::int32_t, domain::ClusterByTopic> cluster_map;
 
     for (const soci::row& row : rows) {
-      const std::int32_t community_id =
-          row.get<std::int32_t>(0);
+      const auto community_id = row.get<std::int32_t>(0);
 
       auto result = cluster_map.try_emplace(
           community_id,

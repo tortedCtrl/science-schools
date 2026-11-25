@@ -14,6 +14,7 @@ struct Config {
 
   // spdlog threshold: trace, debug, info, warning, error, critical, or off.
   std::string log_level;
+  bool show_timer_logs;
 
   std::string backend_host;
   int backend_port;

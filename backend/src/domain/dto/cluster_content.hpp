@@ -10,9 +10,7 @@ namespace schools::domain {
 
 struct ClusterContent {
     std::int32_t community_id{0};
-    std::string algorithm;
-    std::int64_t run_id{0};
-    std::int64_t member_count{0};
+    std::int32_t member_count{0};
     std::vector<AuthorInCluster> authors;
     std::vector<TopicInfo> topics;
 };

@@ -242,25 +242,23 @@ CommunityRepository::ListClusterMetadata(std::string_view algorithm) {
     const std::string algorithm_name{algorithm};
 
     const soci::rowset<soci::row> rows =
-        (sql.prepare << "SELECT cr.id, cr.algorithm, ac.community_id, "
-                        "COUNT(DISTINCT ac.author_id) "
-                        "FROM clustering_runs cr "
-                        "JOIN author_communities ac ON ac.run_id = cr.id "
-                        "WHERE cr.id = ("
-                        "SELECT id FROM clustering_runs "
-                        "WHERE algorithm = :algorithm "
-                        "ORDER BY id DESC LIMIT 1) "
-                        "GROUP BY cr.id, cr.algorithm, ac.community_id "
-                        "ORDER BY ac.community_id",
-         soci::use(algorithm_name));
+      (sql.prepare << "SELECT ac.community_id, "
+                      "COUNT(DISTINCT ac.author_id) "
+                      "FROM clustering_runs cr "
+                      "JOIN author_communities ac ON ac.run_id = cr.id "
+                      "WHERE cr.id = ("
+                      "SELECT id FROM clustering_runs "
+                      "WHERE algorithm = :algorithm "
+                      "ORDER BY id DESC LIMIT 1) "
+                      "GROUP BY ac.community_id "
+                      "ORDER BY ac.community_id",
+      soci::use(algorithm_name));
 
     std::vector<domain::ClusterMetadata> clusters;
     for (const soci::row& row : rows) {
       clusters.push_back({
-          .run_id = row.get<std::int64_t>(0),
-          .algorithm = row.get<std::string>(1),
-          .community_id = row.get<std::int32_t>(2),
-          .member_count = row.get<std::int64_t>(3),
+          .community_id = row.get<std::int32_t>(0),
+          .member_count = row.get<std::int32_t>(1),
       });
     }
     return clusters;
@@ -323,7 +321,7 @@ CommunityRepository::ListClustersByTopic(
           community_id,
           domain::ClusterByTopic{
               .community_id = community_id,
-              .member_count = row.get<std::int64_t>(1),
+              .member_count = row.get<std::int32_t>(1),
           });
 
       result.first->second.authors.push_back({
@@ -361,7 +359,6 @@ Result<domain::ClusterContent> CommunityRepository::GetClusterContent(
     const std::string algorithm_name{algorithm};
 
     domain::ClusterContent content;
-    content.algorithm = algorithm_name;
     content.community_id = community_id;
 
     // Проверяем существование кластера в последнем запуске алгоритма.
@@ -386,8 +383,8 @@ Result<domain::ClusterContent> CommunityRepository::GetClusterContent(
                        community_id, algorithm_name);
     }
 
-    content.run_id = metadata_it->get<std::int64_t>(0);
-    content.member_count = metadata_it->get<std::int64_t>(1);
+    const std::int64_t run_id = metadata_it->get<std::int64_t>(0);
+    content.member_count = metadata_it->get<std::int32_t>(1);
 
     // Получаем авторов кластера.
     const soci::rowset<soci::row> author_rows =
@@ -398,7 +395,7 @@ Result<domain::ClusterContent> CommunityRepository::GetClusterContent(
             "WHERE ac.run_id = :run_id "
             "AND ac.community_id = :community_id "
             "ORDER BY a.name",
-         soci::use(content.run_id), soci::use(community_id));
+          soci::use(run_id), soci::use(community_id));
 
     for (const soci::row& row : author_rows) {
       content.authors.push_back({
@@ -416,7 +413,7 @@ Result<domain::ClusterContent> CommunityRepository::GetClusterContent(
             "WHERE run_id = :run_id "
             "AND community_id = :community_id "
             "ORDER BY article_count DESC, topic_name",
-         soci::use(content.run_id), soci::use(community_id));
+         soci::use(run_id), soci::use(community_id));
 
     for (const soci::row& row : topic_rows) {
       content.topics.push_back({

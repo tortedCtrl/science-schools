@@ -126,8 +126,6 @@ Json TopicInfoJson(const domain::TopicInfo& topic) {
 
 Json ClusterMetadataJson(const domain::ClusterMetadata& cluster) {
   Json value;
-  value["run_id"] = cluster.run_id;
-  value["algorithm"] = cluster.algorithm;
   value["community_id"] = cluster.community_id;
   value["member_count"] = cluster.member_count;
   return value;
@@ -157,8 +155,6 @@ Json ClusterByTopicJson(const domain::ClusterByTopic& cluster) {
 Json ClusterContentJson(const domain::ClusterContent& cluster) {
   Json value;
   value["community_id"] = cluster.community_id;
-  value["algorithm"] = cluster.algorithm;
-  value["run_id"] = cluster.run_id;
   value["member_count"] = cluster.member_count;
 
   value["authors"] = Json::array();

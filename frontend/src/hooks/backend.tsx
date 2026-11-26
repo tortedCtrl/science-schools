@@ -54,6 +54,44 @@ export type GraphResponse = {
     memberships: Map<string, number[]>;
 };
 
+export type ClusterMetadata = {
+    community_id: number;
+    member_count: number;
+};
+
+export type ClusterAuthor = {
+    author_id: number;
+    openalex_id: string;
+    name: string;
+};
+
+export type ClusterContent = {
+    community_id: number;
+    member_count: number;
+    authors: ClusterAuthor[];
+    topics: CommunityTopic[];
+    links: ApiGraphLink[];
+};
+
+export async function fetchClusterMetadata(
+    algorithm: 'leiden' | 'bigclam'
+): Promise<ClusterMetadata[]> {
+    const response = await api.get<ClusterMetadata[]>(
+        `/clusters/${algorithm}`
+    );
+    return Array.isArray(response.data) ? response.data : [];
+}
+
+export async function fetchClusterContent(
+    algorithm: 'leiden' | 'bigclam',
+    communityId: number
+): Promise<ClusterContent> {
+    const response = await api.get<ClusterContent>(
+        `/clusters/${algorithm}/${communityId}`
+    );
+    return response.data;
+}
+
 export function useGraph(
     algorithm: 'leiden' | 'bigclam'
 ): () => Promise<GraphResponse> {

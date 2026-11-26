@@ -48,6 +48,10 @@ export function useHierarchicalGraph(
 
     rawGraph.nodes.forEach((node) => {
       const communityIds = memberships.get(node.id) ?? [];
+      if (node.isCommunityMetadata) {
+        unassignedNodes.push(node);
+        return;
+      }
       if (communityIds.length > 0) {
         communityIds.forEach((cid) => {
           if (!authorsByCommunity.has(cid)) authorsByCommunity.set(cid, []);
@@ -120,6 +124,15 @@ export function useHierarchicalGraph(
     });
 
     unassignedNodes.forEach((node) => {
+      if (node.isCommunityMetadata) {
+        const communityId = node.community_id;
+        if (
+          typeof communityId === 'number' &&
+          authorsByCommunity.has(communityId)
+        ) {
+          return;
+        }
+      }
       displayNodes.push({ ...node });
     });
 

@@ -13,8 +13,9 @@ const BASE_RADIUS_PX = 8;
 // Насколько сильно узел сжимается при отдалении:
 //   0 = размер на экране фиксированный, 1 = ведёт себя как мировой радиус.
 const RADIUS_SHRINK = -0.25;
-// Максимальный уровень приближения (1 = базовый масштаб).
+// Уровни приближения по умолчанию (если снаружи не передали).
 const MAX_ZOOM = 4;
+const MIN_ZOOM = 0.35;
 
 export function GraphView({
   graphData,
@@ -29,6 +30,9 @@ export function GraphView({
   linkColor,
   linkWidth,
   linkDirectionalParticles,
+  minZoom = MIN_ZOOM,
+  maxZoom = MAX_ZOOM,
+  onZoom,
 }: GraphViewProps) {
   // Блокируем зум страницы, когда курсор над графом.
   // Без этого при достижении maxZoom браузер начинает масштабировать весь документ.
@@ -58,7 +62,7 @@ export function GraphView({
     const posY = node.y ?? 0;
 
     const radius =
-      BASE_RADIUS_PX / Math.pow(Math.max(globalScale, 0.05), RADIUS_SHRINK);
+    BASE_RADIUS_PX / Math.pow(Math.max(globalScale, 0.05), RADIUS_SHRINK);
 
     ctx.beginPath();
     ctx.arc(posX, posY, radius, 0, 2 * Math.PI, false);
@@ -66,9 +70,9 @@ export function GraphView({
     if (highlightCluster) {
       const communityId = node.community_id;
       ctx.fillStyle =
-        communityId == null
-          ? '#555555'
-          : `hsl(${(communityId * 137.508) % 360} 70% 55%)`;
+      communityId == null
+      ? '#555555'
+      : `hsl(${(communityId * 137.508) % 360} 70% 55%)`;
     } else if (colorMode === 'geo') {
       ctx.fillStyle = node.location === 'INT' ? '#ff4d4f' : '#1890ff';
     } else {
@@ -85,7 +89,7 @@ export function GraphView({
       Math.min(
         1,
         (globalScale - LABEL_FADE_START) /
-          (LABEL_FADE_END - LABEL_FADE_START)
+        (LABEL_FADE_END - LABEL_FADE_START)
       )
     );
     if (label && labelAlpha > 0.01) {
@@ -96,39 +100,40 @@ export function GraphView({
       ctx.fillStyle = '#ffffff';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
-      ctx.fillText(label, posX, posY + radius + 4);
+      ctx.fillText(label, posX, posY + radius + 4 / globalScale);
       ctx.restore();
     }
   };
 
   return (
     <main className="graph-viewport" ref={viewportRef}>
-      {viewportSize.w > 0 && viewportSize.h > 0 && (
-        <ForceGraph2D
-          ref={graphRef}
-          graphData={graphData}
-          width={viewportSize.w}
-          height={viewportSize.h}
-          maxZoom={MAX_ZOOM}
-          linkColor={
-            linkColor ??
-            ((link: any) => (link.isHidden ? '#ff4d4f' : '#ffffff'))
-          }
-          linkWidth={
-            linkWidth ??
-            ((link: any) => (link.isHidden ? 2.5 : 1.5))
-          }
-          linkCurvature={(link: any) => (link.isHidden ? 0.3 : 0)}
-          nodeCanvasObject={nodeCanvasObject ?? defaultNodeCanvasObject}
-          onNodeClick={onNodeClick}
-          onRenderFramePost={onRenderFramePost}
-          linkDirectionalParticles={
-            linkDirectionalParticles ??
-            ((link: any) => (link.isHidden ? 5 : 2))
-          }
-          linkDirectionalParticleSpeed={0.007}
-        />
-      )}
+    {viewportSize.w > 0 && viewportSize.h > 0 && (
+      <ForceGraph2D
+      ref={graphRef}
+      graphData={graphData}
+      width={viewportSize.w}
+      height={viewportSize.h}
+      minZoom={minZoom}
+      maxZoom={maxZoom}
+      onZoom={onZoom}
+      linkColor={
+        linkColor ??
+        ((link: any) => (link.isHidden ? '#ff4d4f' : '#ffffff'))
+      }
+      linkWidth={
+        linkWidth ?? ((link: any) => (link.isHidden ? 2.5 : 1.5))
+      }
+      linkCurvature={(link: any) => (link.isHidden ? 0.3 : 0)}
+      nodeCanvasObject={nodeCanvasObject ?? defaultNodeCanvasObject}
+      onNodeClick={onNodeClick}
+      onRenderFramePost={onRenderFramePost}
+      linkDirectionalParticles={
+        linkDirectionalParticles ??
+        ((link: any) => (link.isHidden ? 5 : 2))
+      }
+      linkDirectionalParticleSpeed={0.007}
+      />
+    )}
     </main>
   );
 }

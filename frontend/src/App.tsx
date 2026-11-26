@@ -36,8 +36,8 @@ getVisualRadius(memberCount) * 1.5 + 20;
 // --- Пороги масштаба ---
 const NODE_LABEL_MIN_SCALE = 0.8;
 const COMMUNITY_LABEL_MIN_SCALE = 0.5;
-const MIN_ZOOM_SCALE = 0.35;
-const MAX_ZOOM_SCALE = 4;
+const MIN_ZOOM_SCALE = 0.07;
+const MAX_ZOOM_SCALE = 10;
 const INITIAL_ZOOM_SCALE = 1.2;
 
 // Сколько миллисекунд держим жёсткую заморозку после пересборки графа.

@@ -422,6 +422,31 @@ Result<domain::ClusterContent> CommunityRepository::GetClusterContent(
       });
     }
 
+    // Загружаем рёбра только для авторов выбранного кластера.
+    const soci::rowset<soci::row> edge_rows =
+        (sql.prepare
+         << "SELECT ce.source_author_id, ce.target_author_id, ce.weight "
+            "FROM coauthorship_edges ce "
+            "JOIN author_communities source_ac "
+            "ON source_ac.author_id = ce.source_author_id "
+            "AND source_ac.run_id = :source_run_id "
+            "AND source_ac.community_id = :source_community_id "
+            "JOIN author_communities target_ac "
+            "ON target_ac.author_id = ce.target_author_id "
+            "AND target_ac.run_id = :target_run_id "
+            "AND target_ac.community_id = :target_community_id "
+            "ORDER BY ce.source_author_id, ce.target_author_id",
+         soci::use(run_id), soci::use(community_id),
+         soci::use(run_id), soci::use(community_id));
+
+    for (const soci::row& row : edge_rows) {
+      content.links.push_back({
+          .source = row.get<std::int32_t>(0),
+          .target = row.get<std::int32_t>(1),
+          .weight = row.get<std::int32_t>(2),
+      });
+    }
+
     return content;
   } catch (const std::exception& error) {
     return MakeError(Errc::kDatabase,

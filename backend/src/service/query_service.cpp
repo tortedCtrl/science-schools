@@ -168,6 +168,15 @@ Json ClusterContentJson(const domain::ClusterContent& cluster) {
     value["topics"].push_back(TopicInfoJson(topic));
   }
 
+  value["links"] = Json::array();
+  for (const domain::Edge& link : cluster.links) {
+    value["links"].push_back({
+        {"source", link.source},
+        {"target", link.target},
+        {"weight", link.weight},
+    });
+  }
+
   return value;
 }
 

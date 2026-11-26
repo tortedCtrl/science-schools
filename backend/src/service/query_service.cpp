@@ -306,8 +306,9 @@ std::string QueryService::SerializeGraph(const domain::GraphData& graph_data, st
 
 Result<std::string> QueryService::GetGraphJson(std::string_view algorithm) {
   auto full = graph_.GetGraph(algorithm);
-  if (!full) 
+  if (!full) {
     return std::unexpected(full.error());
+  }
   return SerializeGraph(*full, algorithm);
 }
 

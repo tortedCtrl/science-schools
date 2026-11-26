@@ -105,7 +105,7 @@ AuthorRepository::SearchAuthors(std::string_view query_text) {
 
         const bool numeric =
             !query.empty() &&
-            std::all_of(query.begin(), query.end(), [](char ch) {
+            std::ranges::all_of(query, [](char ch) {
                 return ch >= '0' && ch <= '9';
             });
 
@@ -139,7 +139,7 @@ AuthorRepository::SearchAuthors(std::string_view query_text) {
         } else {
             std::string pattern = "%";
 
-            for (char ch : query) {
+            for (const char ch : query) {
                 if (ch == '!' || ch == '%' || ch == '_') {
                     pattern += '!';
                 }

@@ -55,6 +55,61 @@ const FROZEN_RELEASE_MS = 3500;
 // применил новые данные позже эффекта стабилизации.
 const STABILIZE_FRAMES = 10;
 
+const getGraphNeighborhood = (
+  fullGraph: { nodes: any[]; links: any[] },
+  seedIds: Set<string>,
+  depth: number
+): { nodes: any[]; links: any[] } => {
+  if (seedIds.size === 0 || depth < 0) {
+    return { nodes: [], links: [] };
+  }
+
+  const nodeIds = new Set<string>(
+    fullGraph.nodes.map((node: any) => String(node.id))
+  );
+  const adjacency = new Map<string, Set<string>>();
+
+  fullGraph.links.forEach((link: any) => {
+    const source = getLinkId(link.source);
+    const target = getLinkId(link.target);
+    if (source === target || !nodeIds.has(source) || !nodeIds.has(target)) {
+      return;
+    }
+    if (!adjacency.has(source)) adjacency.set(source, new Set());
+    if (!adjacency.has(target)) adjacency.set(target, new Set());
+    adjacency.get(source)!.add(target);
+    adjacency.get(target)!.add(source);
+  });
+
+  const visited = new Set<string>(seedIds);
+  let frontier = new Set<string>(seedIds);
+
+  for (let currentDepth = 0; currentDepth < depth; currentDepth += 1) {
+    const next = new Set<string>();
+    frontier.forEach((nodeId) => {
+      adjacency.get(nodeId)?.forEach((neighborId) => {
+        if (!visited.has(neighborId)) {
+          visited.add(neighborId);
+          next.add(neighborId);
+        }
+      });
+    });
+    frontier = next;
+    if (frontier.size === 0) break;
+  }
+
+  const nodes = fullGraph.nodes.filter((node: any) =>
+    visited.has(String(node.id))
+  );
+  const links = fullGraph.links.filter((link: any) => {
+    const source = getLinkId(link.source);
+    const target = getLinkId(link.target);
+    return visited.has(source) && visited.has(target);
+  });
+
+  return { nodes, links };
+};
+
 export default function App() {
   const fetchLeidenData = useGraph('leiden');
   const fetchBigClamData = useGraph('bigclam');
@@ -63,7 +118,7 @@ export default function App() {
   useState<AlgorithmMode>('leiden');
 
   const [searchName, setSearchName] = useState('');
-  const [showAll, setShowAll] = useState(true);
+  const [showAll, setShowAll] = useState(false);
   const [searchDepth, setSearchDepth] = useState(1);
   const [vCap, setVCap] = useState<number | ''>(100);
   const [loading, setLoading] = useState(false);
@@ -295,10 +350,13 @@ export default function App() {
           await reloadLeidenGraph();
           return;
         }
-        const clusters = await fetchClusterMetadata('bigclam');
+        const [clusters, fullGraph] = await Promise.all([
+          fetchClusterMetadata('bigclam'),
+          fetchBigClamData(),
+        ]);
         if (!isMounted) return;
         const nodes = clusters.map((cluster) => ({
-          id: `cluster-meta-${cluster.community_id}`,
+          id: `community-${cluster.community_id}`,
           name: `Сообщество #${cluster.community_id}`,
           community_id: cluster.community_id,
           memberCount: cluster.member_count,
@@ -308,10 +366,14 @@ export default function App() {
           location: 'RU',
           val: getVisualRadius(cluster.member_count),
         }));
-        setMemberships(new Map());
+        setFullGraphData({
+          nodes: fullGraph.nodes,
+          links: fullGraph.links,
+        });
+        setMemberships(fullGraph.memberships);
         setExpandedCommunities(new Set());
         clusterContentCacheRef.current.clear();
-        setRawGraph({ nodes, links: [] });
+        setRawGraph({ nodes, links: fullGraph.links });
         setGraphStatus(nodes.length === 0 ? 'empty' : 'ready');
       } catch (error) {
         console.error('BigCLAM graph error:', error);
@@ -518,10 +580,13 @@ export default function App() {
         void reloadLeidenGraph();
       } else {
         setLoading(true);
-        fetchClusterMetadata('bigclam')
-          .then((clusters) => {
+        Promise.all([
+          fetchClusterMetadata('bigclam'),
+          fetchBigClamData(),
+        ])
+          .then(([clusters, fullGraph]) => {
             const nodes = clusters.map((cluster) => ({
-              id: `cluster-meta-${cluster.community_id}`,
+              id: `community-${cluster.community_id}`,
               name: `Сообщество #${cluster.community_id}`,
               community_id: cluster.community_id,
               memberCount: cluster.member_count,
@@ -531,8 +596,12 @@ export default function App() {
               location: 'RU',
               val: getVisualRadius(cluster.member_count),
             }));
-            setMemberships(new Map());
-            setRawGraph({ nodes, links: [] });
+            setFullGraphData({
+              nodes: fullGraph.nodes,
+              links: fullGraph.links,
+            });
+            setMemberships(fullGraph.memberships);
+            setRawGraph({ nodes, links: fullGraph.links });
             setGraphStatus(nodes.length === 0 ? 'empty' : 'ready');
           })
           .catch((error) => {
@@ -666,20 +735,33 @@ export default function App() {
         clusterContentCacheRef.current.set(communityId, content);
       }
 
-      const nodes = content.authors.map((author) => ({
-        id: String(author.author_id),
-        name: author.name,
-        community_id: communityId,
-        type: 'person',
-        location: 'RU',
-        val: 1,
-      }));
-      const links = content.links.map((link) => ({
-        source: String(link.source),
-        target: String(link.target),
-        weight: link.weight,
-        isHidden: false,
-      }));
+      const clusterAuthorIds = new Set(
+        content.authors.map((author) => String(author.author_id))
+      );
+      const fullGraph = await fetchLeidenData();
+      const neighborhood = getGraphNeighborhood(
+        { nodes: fullGraph.nodes, links: fullGraph.links },
+        clusterAuthorIds,
+        searchDepth
+      );
+      const nodes = neighborhood.nodes.length > 0
+        ? neighborhood.nodes
+        : content.authors.map((author) => ({
+            id: String(author.author_id),
+            name: author.name,
+            community_id: communityId,
+            type: 'person',
+            location: 'RU',
+            val: 1,
+          }));
+      const links = neighborhood.links.length > 0
+        ? neighborhood.links
+        : content.links.map((link) => ({
+            source: String(link.source),
+            target: String(link.target),
+            weight: link.weight,
+            isHidden: false,
+          }));
       const clusterGraph = { nodes, links };
       setGraphData(clusterGraph);
       setFullGraphData(clusterGraph);
@@ -727,6 +809,22 @@ export default function App() {
       const next = new Set(expandedCommunities);
       const nextMemberships = new Map(memberships);
 
+      if (showAll) {
+        if (wasExpanded) {
+          next.delete(communityId);
+        } else {
+          next.add(communityId);
+        }
+        setExpandedCommunities(next);
+        setSelectedNode({
+          ...node,
+          community_id: communityId,
+          type: 'community',
+        });
+        setRightOpen(true);
+        return;
+      }
+
       if (wasExpanded) {
         next.delete(communityId);
         clusterContentCacheRef.current.delete(communityId);
@@ -753,9 +851,6 @@ export default function App() {
         (rawNode: any) => rawNode.isCommunityMetadata
       );
       const authorNodes: any[] = [];
-      const combinedLinks: any[] = [];
-      const linkKeys = new Set<string>();
-      nextMemberships.clear();
 
       for (const [id, content] of clusterContentCacheRef.current.entries()) {
         for (const author of content.authors) {
@@ -775,26 +870,43 @@ export default function App() {
             nextMemberships.set(authorId, [...communities, id]);
           }
         }
-        for (const link of content.links) {
-          const source = String(link.source);
-          const target = String(link.target);
-          const key = [source, target].sort().join(':');
-          if (!linkKeys.has(key)) {
-            linkKeys.add(key);
-            combinedLinks.push({
-              source,
-              target,
-              weight: link.weight,
-              isHidden: false,
-            });
-          }
+      }
+
+      if (!wasExpanded) {
+        const selectedContent =
+          clusterContentCacheRef.current.get(communityId);
+        if (selectedContent) {
+          const clusterAuthorIds = new Set(
+            selectedContent.authors.map((author) =>
+              String(author.author_id)
+            )
+          );
+          const neighborhood = getGraphNeighborhood(
+            fullGraphData,
+            clusterAuthorIds,
+            searchDepth
+          );
+          neighborhood.nodes.forEach((node: any) => {
+            const nodeId = String(node.id);
+            if (clusterAuthorIds.has(nodeId)) return;
+            if (!authorNodes.some((item) => item.id === nodeId)) {
+              authorNodes.push({
+                ...node,
+                id: nodeId,
+                type: 'person',
+                isOutsideCluster: true,
+                val: 1,
+              });
+            }
+            nextMemberships.delete(nodeId);
+          });
         }
       }
 
       setMemberships(nextMemberships);
       setRawGraph({
         nodes: [...metadataNodes, ...authorNodes],
-        links: combinedLinks,
+        links: fullGraphData.links,
       });
 
       // 2. При РАСКРЫТИИ заранее раскладываем участников кольцом вокруг якоря

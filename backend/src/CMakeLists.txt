@@ -3,6 +3,8 @@ add_library(backend_core STATIC)
 target_sources(
     backend_core
     PRIVATE
+    graph_engine/neighborhood_bfs.cpp
+    service/community_topic_aggregator.cpp
     api/routes.cpp
     common/config.cpp
     common/rate_limiter.cpp
@@ -17,7 +19,6 @@ target_sources(
     repository/ingest_repository.cpp
     repository/schema.cpp
     service/ingest_service.cpp
-    service/community_topic_aggregator.cpp
     service/query_service.cpp
     graph_engine/bigclam_wrapper.cpp
 )
@@ -40,4 +41,5 @@ target_link_libraries(
         CURL::libcurl
         nlohmann_json::nlohmann_json
         gve_leiden
+        snap_bigclam_bridge
 )

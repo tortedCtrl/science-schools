@@ -35,6 +35,8 @@ services:
       BACKEND_PORT: ${BACKEND_PORT}
       BACKEND_HOST: 0.0.0.0
       FRONTEND_PORT: ${FRONTEND_PORT}
+      CONFIG_PATH: /etc/science-schools/config.json
+      OPENALEX_API_KEY: ${OPENALEX_API_KEY:-}
       
     ports:
       - "${BACKEND_PORT}:${BACKEND_PORT}"
@@ -43,6 +45,8 @@ services:
         condition: service_healthy
     networks:
       - backend
+    volumes:
+      - ./backend/config.json:/etc/science-schools/config.json:ro,z
 
   frontend:
     build:

@@ -100,7 +100,11 @@ void InsertArticles(soci::session& sql,
   years.reserve(articles.size());
   for (const domain::Article& article : articles) {
     ids.push_back(article.openalex_id);
-    titles.push_back(article.title);
+    std::string title = article.title;
+    if (title.size() > 512) {
+        title.resize(512);
+    }
+    titles.push_back(std::move(title));
     years.push_back(article.year);
   }
 

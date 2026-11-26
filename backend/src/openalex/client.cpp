@@ -136,11 +136,19 @@ Result<std::vector<domain::Author>> OpenAlexClient::FetchAuthorsPage(
       "&per_page=" +
       std::to_string(per_page) + "&page=" + std::to_string(page) +
       BuildQuerySuffix(options_);
-  auto body = Get(url);
-  if (!body) {
-    return std::unexpected(body.error());
+  std::vector<domain::Author> authors;
+  auto fetched = Get(url, [&authors](std::string_view body) -> Status {
+    auto parsed = ParseAuthors(body);
+    if (!parsed) {
+      return std::unexpected(parsed.error());
+    }
+    authors = std::move(*parsed);
+    return {};
+  });
+  if (!fetched) {
+    return std::unexpected(fetched.error());
   }
-  return ParseAuthors(*body);
+  return authors;
 }
 
 Result<std::vector<domain::Work>> OpenAlexClient::FetchWorksPage(
@@ -165,11 +173,20 @@ Result<std::vector<domain::Work>> OpenAlexClient::FetchWorksPage(
       "&select=id,title,publication_year,authorships,topics,primary_topic&per_page=" +
       std::to_string(per_page) + "&page=" + std::to_string(page) +
       BuildQuerySuffix(options_);
-  auto body = Get(url);
-  if (!body) {
-    return std::unexpected(body.error());
+  std::vector<domain::Work> works;
+  auto fetched = Get(url, [&works, &selected_authors](std::string_view body)
+                         -> Status {
+    auto parsed = ParseWorks(body, selected_authors);
+    if (!parsed) {
+      return std::unexpected(parsed.error());
+    }
+    works = std::move(*parsed);
+    return {};
+  });
+  if (!fetched) {
+    return std::unexpected(fetched.error());
   }
-  return ParseWorks(*body, selected_authors);
+  return works;
 }
 
 Result<OpenAlexClient::Response> OpenAlexClient::Perform(
@@ -227,7 +244,9 @@ Result<OpenAlexClient::Response> OpenAlexClient::Perform(
   return response;
 }
 
-Result<std::string> OpenAlexClient::Get(std::string_view url) {
+Status OpenAlexClient::Get(
+    std::string_view url,
+    const std::function<Status(std::string_view)>& consume_response) {
   for (int attempt = 0; attempt <= options_.max_retries; ++attempt) {
     limiter_.Acquire();
 
@@ -243,7 +262,20 @@ Result<std::string> OpenAlexClient::Get(std::string_view url) {
       continue;
     }
     if (response->status == 200) {
-      return std::move(response->body);
+      auto consumed = consume_response(response->body);
+      if (consumed) {
+        return {};
+      }
+      if (consumed.error().code != Errc::kParse ||
+          attempt == options_.max_retries) {
+        return std::unexpected(consumed.error());
+      }
+
+      const std::chrono::milliseconds delay = BackoffDelay(attempt);
+      spdlog::warn("OpenAlex response parsing failed: {}, retry {} in {} ms",
+                   consumed.error().message, attempt + 1, delay.count());
+      std::this_thread::sleep_for(delay);
+      continue;
     }
 
     const bool retryable = response->status == 429 || response->status == 0 ||

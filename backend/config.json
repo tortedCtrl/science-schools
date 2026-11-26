@@ -1,0 +1,19 @@
+{
+  "db_pool_size": 8,
+  "log_level": "info",
+  "show_timer_logs": false,
+  "backend_host": "0.0.0.0",
+  "backend_port": 8080,
+  "frontend_port": "5173",
+  "ingest_max_authors": 100,
+  "ingest_author_page_size": 100,
+  "ingest_work_page_size": 50,
+  "ingest_work_pages": 5,
+  "ingest_work_batch_size": 50,
+  "ingest_concurrency": 16,
+  "download_authors": true,
+  "bigclam_communities": 10,
+  "bigclam_threads": 1,
+  "openalex_rps": 5.0,
+  "openalex_max_retries": 10
+}

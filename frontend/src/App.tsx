@@ -6,9 +6,11 @@ import React, {
 } from 'react';
 import * as d3 from 'd3-force';
 import {
-  useCommunityTopics,
-  useGraph,
-  type CommunityTopic,
+    useCommunityTopics,
+    useGraph,
+    fetchNeighborhood,
+    searchAuthors,
+    type CommunityTopic,
 } from './hooks/backend';
 import { useHierarchicalGraph } from './hooks/useHierarchicalGraph';
 import { SearchPanel, type AlgorithmMode, type ColorMode } from './components/SearchPanel';
@@ -84,7 +86,11 @@ export default function App() {
     nodes: any[];
     links: any[];
   }>({ nodes: [], links: [] });
-
+  const [searchResult, setSearchResult] = useState<{
+    nodes: any[];
+    links: any[];
+  } | null>(null);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const [rawGraph, setRawGraph] = useState<{
     nodes: any[];
     links: any[];
@@ -287,8 +293,10 @@ export default function App() {
     positionCacheRef
   );
   const currentGraphData =
-  algorithmMode === 'bigclam' ? displayBigClamGraph : graphData;
-
+    searchResult ??
+    (algorithmMode === 'bigclam'
+      ? displayBigClamGraph
+      : graphData);
   const toggleHighlightCluster = () => {
     const enabled = !highlightCluster;
     setHighlightCluster(enabled);
@@ -329,65 +337,82 @@ export default function App() {
     });
   }, [algorithmMode, selectedCommunityId, fetchCommunityTopics]);
 
-  const handleLeidenSearch = async (event?: React.FormEvent) => {
-    if (event) event.preventDefault();
-    if (algorithmMode === 'bigclam') return;
+  
+  const handleGraphSearch = async (event?: React.FormEvent) => {
+    event?.preventDefault();
+    setSearchError(null);
 
-    const full = await reloadLeidenGraph();
-    const baseLinks = showHiddenLinks
-    ? full.links
-    : full.links.filter((link: any) => !link.isHidden);
-
-    if (showAll || !searchName.trim()) {
-      setGraphData({ nodes: full.nodes, links: baseLinks });
-      return;
-    }
-
-    const targetNode = full.nodes.find(
-      (node: any) =>
-      node.name.toLowerCase().includes(searchName.toLowerCase()) ||
-      node.id === searchName
-    );
-    if (!targetNode) {
-      setGraphData({ nodes: [], links: [] });
+    if (showAll) {
+      setSearchResult(null);
       setSelectedNode(null);
       return;
     }
 
-    setSelectedNode(targetNode);
-    const visited = new Set<string>([targetNode.id]);
-    let current = new Set<string>([targetNode.id]);
+    const query = searchName.trim();
+    if (!query) {
+      setSearchError('Введите имя или ID автора');
+      return;
+    }
 
-    for (let depth = 0; depth < searchDepth; depth++) {
-      const next = new Set<string>();
-      baseLinks.forEach((link: any) => {
-        const source = getLinkId(link.source);
-        const target = getLinkId(link.target);
-        if (current.has(source) && !visited.has(target)) {
-          visited.add(target);
-          next.add(target);
-        }
-        if (current.has(target) && !visited.has(source)) {
-          visited.add(source);
-          next.add(source);
-        }
+    const cap = vCap === '' ? 1000 : vCap;
+
+    if (!Number.isInteger(cap) || cap < 1 || cap > 1000) {
+      setSearchError('V_cap должен быть от 1 до 1000');
+      return;
+    }
+
+    setSearchResult(null);
+    setSelectedNode(null);
+    setLoading(true);
+
+    try {
+      const authors = await searchAuthors(query);
+
+      if (authors.length === 0) {
+        setSearchError('Автор не найден в базе данных');
+        return;
+      }
+
+      if (authors.length > 1) {
+        const suggestions = authors
+          .slice(0, 5)
+          .map((author) => `${author.id} — ${author.name}`)
+          .join('; ');
+
+        setSearchError(
+          `Найдено несколько авторов: ${suggestions}. Введите нужный ID.`
+        );
+        return;
+      }
+
+      const authorId = authors[0].id;
+
+      const result = await fetchNeighborhood(
+        algorithmMode,
+        authorId,
+        searchDepth,
+        cap
+      );
+
+      setSearchResult({
+        nodes: result.nodes,
+        links: result.links,
       });
-      if (!next.size) break;
-      current = next;
-    }
 
-    const filteredLinks = baseLinks.filter((link: any) => {
-      const source = getLinkId(link.source);
-      const target = getLinkId(link.target);
-      return visited.has(source) && visited.has(target);
-    });
-    let filteredNodes = full.nodes.filter((node: any) =>
-    visited.has(node.id)
-    );
-    if (vCap !== '' && filteredNodes.length > vCap) {
-      filteredNodes = filteredNodes.slice(0, vCap);
+      const selected = result.nodes.find(
+        (node) => node.id === String(authorId)
+      );
+
+      setSelectedNode(selected ?? null);
+
+      setGraphStatus(result.nodes.length > 0 ? 'ready' : 'empty');
+
+    } catch (error) {
+      console.error('Author search / neighborhood API error:', error);
+      setSearchError('Не удалось выполнить поиск на сервере');
+    } finally {
+      setLoading(false);
     }
-    setGraphData({ nodes: filteredNodes, links: filteredLinks });
   };
 
   const toggleHiddenLinks = (checked: boolean) => {
@@ -416,11 +441,12 @@ export default function App() {
 
   const handleShowAllChange = (checked: boolean) => {
     setShowAll(checked);
-    if (algorithmMode === 'leiden' && checked) {
-      setSearchName('');
-      reloadLeidenGraph();
+    setSearchError(null);
+    if (checked) {
+        setSearchResult(null);
+        setSelectedNode(null);
     }
-  };
+};
 
   // Физика BigCLAM. Силы фиксируем по rawGraph.nodes.length,
   // чтобы раскрытие/сворачивание не меняло глобальную физику.
@@ -696,39 +722,40 @@ export default function App() {
 
   return (
     <div className="app-container">
-    <SearchPanel
-    searchName={searchName}
-    setSearchName={setSearchName}
-    showAll={showAll}
-    onShowAllChange={handleShowAllChange}
-    searchDepth={searchDepth}
-    setSearchDepth={setSearchDepth}
-    vCap={vCap}
-    setVCap={setVCap}
-    loading={loading}
-    onSubmit={handleLeidenSearch}
-    showHiddenLinks={showHiddenLinks}
-    onToggleHiddenLinks={toggleHiddenLinks}
-    colorMode={colorMode}
-    setColorMode={setColorMode}
-    highlightCluster={highlightCluster}
-    onToggleHighlightCluster={toggleHighlightCluster}
-    algorithmMode={algorithmMode}
-    onAlgorithmModeChange={(mode) => {
-      if (mode === algorithmMode) return;
-      setAlgorithmMode(mode);
-      setSelectedNode(null);
-      setExpandedCommunities(new Set());
-      // Сброс кэша выполняется в loadMode (positionCacheRef.current.clear()),
-      // здесь чистим только данные, чтобы не гонять очистку дважды.
-      setRawGraph({ nodes: [], links: [] });
-      setMemberships(new Map());
-      setGraphData({ nodes: [], links: [] });
-      setFullGraphData({ nodes: [], links: [] });
-    }}
-    leftOpen={leftOpen}
-    onToggleLeft={() => setLeftOpen((value) => !value)}
-    />
+      <SearchPanel
+        searchName={searchName}
+        setSearchName={setSearchName}
+        showAll={showAll}
+        onShowAllChange={handleShowAllChange}
+        searchDepth={searchDepth}
+        setSearchDepth={setSearchDepth}
+        vCap={vCap}
+        setVCap={setVCap}
+        loading={loading}
+        onSubmit={handleGraphSearch}
+        showHiddenLinks={showHiddenLinks}
+        onToggleHiddenLinks={toggleHiddenLinks}
+        colorMode={colorMode}
+        setColorMode={setColorMode}
+        highlightCluster={highlightCluster}
+        onToggleHighlightCluster={toggleHighlightCluster}
+        algorithmMode={algorithmMode}
+        onAlgorithmModeChange={(mode) => {
+          if (mode === algorithmMode) return;
+          setAlgorithmMode(mode);
+          setSearchResult(null);
+          setSearchError(null);
+          setShowAll(true);
+          setSelectedNode(null);
+          setExpandedCommunities(new Set());
+          setRawGraph({ nodes: [], links: [] });
+          setMemberships(new Map());
+          setGraphData({ nodes: [], links: [] });
+          setFullGraphData({ nodes: [], links: [] });
+        }}
+        leftOpen={leftOpen}
+        onToggleLeft={() => setLeftOpen((value) => !value)}
+      />
 
     <div className="graph-stage">
     <GraphView
@@ -748,47 +775,46 @@ export default function App() {
     }
     onRenderFramePost={
       algorithmMode === 'bigclam'
-  ? (ctx: CanvasRenderingContext2D) => {
-    // Страховка: первые кадры после пересборки переутверждаем
-    // позиции независимо от тайминга эффектов.
-    if (stabilizeFramesRef.current > 0) {
-      stabilizeFramesRef.current -= 1;
-      const liveNodes =
-      graphRef.current?.graphData?.()?.nodes;
-      if (Array.isArray(liveNodes)) {
-        applyStabilization(liveNodes);
-      }
-    }
+        ? (ctx: CanvasRenderingContext2D) => {
+            if (searchResult !== null) return;
 
-    drawCommunityHulls({
-      ctx,
-      nodes: displayBigClamGraph.nodes,
-      expandedCommunities,
-      getRadius: getVisualHullRadius,
-    });
+            if (stabilizeFramesRef.current > 0) {
+              stabilizeFramesRef.current -= 1;
+              const liveNodes =
+                graphRef.current?.graphData?.()?.nodes;
+              if (Array.isArray(liveNodes)) {
+                applyStabilization(liveNodes);
+              }
+            }
 
-    // Якоря раскрытых сообществ держим на месте постоянно.
-    const liveNodes = graphRef.current?.graphData?.()?.nodes;
-    if (Array.isArray(liveNodes)) {
-      for (const n of liveNodes) {
-        if (
-          n.isAnchor &&
-          typeof n.x === 'number' &&
-          typeof n.y === 'number'
-        ) {
-          if (n.fx == null || n.fy == null) {
-            n.fx = n.x;
-            n.fy = n.y;
+            drawCommunityHulls({
+              ctx,
+              nodes: displayBigClamGraph.nodes,
+              expandedCommunities,
+              getRadius: getVisualHullRadius,
+            });
+
+            const liveNodes = graphRef.current?.graphData?.()?.nodes;
+            if (Array.isArray(liveNodes)) {
+              for (const node of liveNodes) {
+                if (
+                  node.isAnchor &&
+                  typeof node.x === 'number' &&
+                  typeof node.y === 'number'
+                ) {
+                  if (node.fx == null || node.fy == null) {
+                    node.fx = node.x;
+                    node.fy = node.y;
+                  }
+                  positionCacheRef.current.set(String(node.id), {
+                    x: node.x,
+                    y: node.y,
+                  });
+                }
+              }
+            }
           }
-          positionCacheRef.current.set(String(n.id), {
-            x: n.x,
-            y: n.y,
-          });
-        }
-      }
-    }
-  }
-  : undefined
+        : undefined
     }
     linkColor={
       algorithmMode === 'bigclam'
@@ -828,6 +854,11 @@ export default function App() {
     {!loading && graphStatus === 'error' && (
       <div className="graph-status graph-status-error">
       Сервер не запущен или API недоступен
+      </div>
+    )}
+    {searchError && !loading && (
+      <div className="graph-status graph-status-error">
+        {searchError}
       </div>
     )}
     {!loading && graphStatus === 'empty' && (
